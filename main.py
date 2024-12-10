@@ -41,6 +41,11 @@ def get_model(model_name):
     return model
 
 def main():
+    # Update Config paths for Kaggle
+    Config.DATA_ROOT = "/kaggle/input/3body-filtered-v2-10k"
+    Config.CHECKPOINT_DIR = "/kaggle/working/checkpoints"
+    Config.LOG_DIR = "/kaggle/working/logs"
+    
     args = parse_args()
     
     # Set device and print hardware info

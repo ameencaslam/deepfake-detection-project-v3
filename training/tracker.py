@@ -137,6 +137,7 @@ class TrainingTracker:
         
         state = {
             'epoch': epoch,
+            'model_name': self.model_name,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'metrics': self.metrics
@@ -162,12 +163,10 @@ class TrainingTracker:
         )
         
         if os.path.exists(checkpoint_path):
-            checkpoint = torch.load(checkpoint_path)
+            checkpoint = torch.load(checkpoint_path, weights_only=True)
             
             # Verify model architecture
-            if 'model_name' not in checkpoint:
-                print("Warning: Checkpoint doesn't contain model architecture info")
-            elif checkpoint['model_name'] != self.model_name:
+            if 'model_name' in checkpoint and checkpoint['model_name'] != self.model_name:
                 raise ValueError(
                     f"Model architecture mismatch. Checkpoint is for {checkpoint['model_name']}, "
                     f"but trying to load into {self.model_name}"

@@ -4,6 +4,9 @@ from .metrics import MetricsCalculator
 from .tracker import TrainingTracker
 from utils.visualization import VisualizationUtils
 import numpy as np
+import os
+import sys
+import shutil
 
 class Trainer:
     def __init__(self, model, train_loader, val_loader, test_loader, device):
@@ -24,6 +27,9 @@ class Trainer:
         self.tracker = TrainingTracker(model.model_name)
         self.metrics_calculator = MetricsCalculator()
         self.visualizer = VisualizationUtils()
+        
+        # Create directories for plots
+        os.makedirs('plots', exist_ok=True)
     
     def train_epoch(self, epoch):
         """Train for one epoch"""
@@ -172,6 +178,10 @@ class Trainer:
                 epoch,
                 is_best
             )
+            
+            # Plot training progress after each epoch
+            self.visualizer.plot_training_history(self.tracker.metrics)
+            self.visualizer.save_plots('plots')
     
     def test(self):
         """Test the model"""
@@ -188,26 +198,29 @@ class Trainer:
         
         # Print results
         print("\nTest Results:")
-        self.metrics_calculator.print_metrics(test_metrics)
+        print(f"Test Loss: {test_metrics['loss']:.4f}")
+        print(f"Test Accuracy: {test_metrics['accuracy']:.2f}%")
+        print(f"Test AUC-ROC: {test_metrics['auc_roc']:.4f}")
+        print(f"Test F1-Score: {test_metrics['f1_score']:.4f}")
         
         # Plot test results
         self.visualizer.plot_confusion_matrix(test_targets, test_preds)
         self.visualizer.plot_roc_curve(test_targets, test_probs)
         self.visualizer.plot_prediction_distribution(test_probs)
         self.visualizer.plot_metrics_summary(test_metrics)
+        self.visualizer.save_plots('plots')
         
         # Zip checkpoints
-        import os
-        import shutil
         if os.path.exists(Config.CHECKPOINT_DIR):
             shutil.make_archive('checkpoints', 'zip', Config.CHECKPOINT_DIR)
             print(f"\nCheckpoints saved to: checkpoints.zip")
             
             try:
-                from IPython.display import FileLink
-                display(FileLink('checkpoints.zip'))
+                from IPython.display import display, FileLink
+                if 'ipykernel' in sys.modules:  # Only if running in notebook
+                    display(FileLink('checkpoints.zip'))
             except ImportError:
-                pass
+                pass  # Not in a notebook environment
         
         return test_metrics
     

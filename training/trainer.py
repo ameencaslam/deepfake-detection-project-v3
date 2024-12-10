@@ -44,6 +44,7 @@ class Trainer:
         
         running_loss = 0.0
         running_acc = 0.0
+        num_samples = 0
         
         for batch_idx, (data, target) in enumerate(self.train_loader):
             data = data.to(self.device)
@@ -62,8 +63,14 @@ class Trainer:
             acc = self.metrics_calculator.calculate_accuracy(output.squeeze(), target)
             
             # Update running metrics
-            running_loss += loss.item()
-            running_acc += acc
+            batch_size = data.size(0)
+            num_samples += batch_size
+            running_loss += loss.item() * batch_size  # Weight loss by batch size
+            running_acc += acc * batch_size  # Weight accuracy by batch size
+            
+            # Calculate current averages
+            current_avg_loss = running_loss / num_samples
+            current_avg_acc = running_acc / num_samples
             
             # Update progress
             self.tracker.update_batch(
@@ -71,13 +78,13 @@ class Trainer:
                 loss.item(),
                 acc,
                 self.optimizer.param_groups[0]['lr'],
-                running_loss,
-                running_acc
+                current_avg_loss,
+                current_avg_acc
             )
         
-        # Update epoch metrics
-        epoch_loss = running_loss / len(self.train_loader)
-        epoch_acc = running_acc / len(self.train_loader)
+        # Calculate final epoch metrics
+        epoch_loss = running_loss / num_samples
+        epoch_acc = running_acc / num_samples
         self.tracker.update_epoch(epoch_loss, epoch_acc)
         
         return epoch_loss, epoch_acc
@@ -87,6 +94,7 @@ class Trainer:
         self.model.eval()
         running_loss = 0.0
         running_acc = 0.0
+        num_samples = 0
         all_outputs = []
         all_targets = []
         
@@ -106,18 +114,22 @@ class Trainer:
                 acc = self.metrics_calculator.calculate_accuracy(output.squeeze(), target)
                 
                 # Update running metrics
-                running_loss += loss.item()
-                running_acc += acc
+                batch_size = data.size(0)
+                num_samples += batch_size
+                running_loss += loss.item() * batch_size  # Weight loss by batch size
+                running_acc += acc * batch_size  # Weight accuracy by batch size
+                
+                # Calculate current averages
+                current_avg_loss = running_loss / num_samples
+                current_avg_acc = running_acc / num_samples
                 
                 # Update progress bars with batch metrics
-                batch_loss = loss.item()
-                batch_acc = acc
                 self.tracker.update_validation_batch(
                     batch_idx,
-                    batch_loss,
-                    batch_acc,
-                    running_loss,
-                    running_acc
+                    loss.item(),
+                    acc,
+                    current_avg_loss,
+                    current_avg_acc
                 )
                 
                 # Store predictions and targets for final metrics
@@ -128,8 +140,8 @@ class Trainer:
         self.tracker.close_validation()
         
         # Calculate final metrics
-        val_loss = running_loss / len(loader)
-        val_acc = running_acc / len(loader)
+        val_loss = running_loss / num_samples
+        val_acc = running_acc / num_samples
         metrics = self.metrics_calculator.calculate_epoch_metrics(
             all_outputs,
             all_targets
@@ -174,6 +186,10 @@ class Trainer:
                 self.model,
                 self.optimizer
             )
+            # Adjust start_epoch to prevent skipping epochs
+            if start_epoch >= Config.NUM_EPOCHS - 1:
+                print(f"\nTraining already completed ({start_epoch + 1} epochs). Starting fresh.")
+                start_epoch = 0
         
         # Create plots directory
         os.makedirs('plots', exist_ok=True)

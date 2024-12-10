@@ -39,7 +39,9 @@ class TrainingTracker:
         if self.epoch_pbar is not None:
             self.epoch_pbar.close()
         
-        desc = f'Epoch [{epoch+1}/{Config.NUM_EPOCHS}]'
+        # Adjust epoch display to be 1-based
+        current_epoch = epoch + 1
+        desc = f'Epoch [{current_epoch}/{Config.NUM_EPOCHS}]'
         bar_format = '{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}'
         
         self.epoch_pbar = tqdm(
@@ -177,9 +179,10 @@ class TrainingTracker:
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
                 self.metrics = checkpoint['metrics']
-                total_epochs = checkpoint['epoch'] + 1
-                print(f"Successfully loaded checkpoint. Total epochs completed: {total_epochs}")
-                return checkpoint['epoch']
+                # Get the next epoch number (0-based)
+                next_epoch = checkpoint['epoch'] + 1
+                print(f"Successfully loaded checkpoint from epoch {checkpoint['epoch'] + 1}")
+                return next_epoch
             except Exception as e:
                 raise ValueError(f"Error loading checkpoint: {str(e)}")
         print("No checkpoint found, starting from scratch")

@@ -2,6 +2,8 @@ import torch
 from config.config import Config
 from .metrics import MetricsCalculator
 from .tracker import TrainingTracker
+from utils.visualization import VisualizationUtils
+import numpy as np
 
 class Trainer:
     def __init__(self, model, train_loader, val_loader, test_loader):
@@ -14,6 +16,7 @@ class Trainer:
         self.criterion = model.get_criterion()
         self.tracker = TrainingTracker(model.model_name)
         self.metrics_calculator = MetricsCalculator()
+        self.visualizer = VisualizationUtils()
         
         # Set device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -108,10 +111,8 @@ class Trainer:
             )
         
         for epoch in range(start_epoch, Config.NUM_EPOCHS):
-            # Train
+            # Train and validate
             train_loss, train_acc = self.train_epoch(epoch)
-            
-            # Validate
             val_metrics = self.validate(self.val_loader)
             
             # Print metrics
@@ -134,6 +135,32 @@ class Trainer:
                 epoch,
                 is_best
             )
+            
+            # Plot training progress
+            self.visualizer.plot_training_history(self.tracker.metrics)
+        
+        # After training completes
+        # Plot final training curves
+        self.visualizer.plot_training_history(self.tracker.metrics)
+        
+        # Get and plot validation predictions
+        val_preds, val_probs, val_targets = self.get_predictions(self.val_loader)
+        self.visualizer.plot_confusion_matrix(val_targets, val_preds)
+        self.visualizer.plot_roc_curve(val_targets, val_probs)
+        self.visualizer.plot_prediction_distribution(val_probs)
+        
+        # Zip checkpoints
+        import os
+        import shutil
+        if os.path.exists(Config.CHECKPOINT_DIR):
+            shutil.make_archive('checkpoints', 'zip', Config.CHECKPOINT_DIR)
+            print(f"\nCheckpoints saved to: checkpoints.zip")
+            
+            try:
+                from IPython.display import FileLink
+                display(FileLink('checkpoints.zip'))
+            except ImportError:
+                pass
     
     def test(self):
         """Test the model"""
@@ -144,9 +171,51 @@ class Trainer:
             'best'
         )
         
-        # Run test
+        # Get predictions and metrics
+        test_preds, test_probs, test_targets = self.get_predictions(self.test_loader)
         test_metrics = self.validate(self.test_loader)
+        
+        # Print results
         print("\nTest Results:")
         self.metrics_calculator.print_metrics(test_metrics)
         
-        return test_metrics 
+        # Plot test results
+        self.visualizer.plot_confusion_matrix(test_targets, test_preds)
+        self.visualizer.plot_roc_curve(test_targets, test_probs)
+        self.visualizer.plot_prediction_distribution(test_probs)
+        self.visualizer.plot_metrics_summary(test_metrics)
+        
+        # Zip checkpoints
+        import os
+        import shutil
+        if os.path.exists(Config.CHECKPOINT_DIR):
+            shutil.make_archive('checkpoints', 'zip', Config.CHECKPOINT_DIR)
+            print(f"\nCheckpoints saved to: checkpoints.zip")
+            
+            try:
+                from IPython.display import FileLink
+                display(FileLink('checkpoints.zip'))
+            except ImportError:
+                pass
+        
+        return test_metrics
+    
+    def get_predictions(self, loader):
+        """Get model predictions"""
+        self.model.eval()
+        all_preds = []
+        all_probs = []
+        all_targets = []
+        
+        with torch.no_grad():
+            for data, target in loader:
+                data = data.to(self.device)
+                output = self.model(data)
+                probs = torch.sigmoid(output.squeeze())
+                preds = (probs > 0.5).float()
+                
+                all_preds.extend(preds.cpu().numpy())
+                all_probs.extend(probs.cpu().numpy())
+                all_targets.extend(target.numpy())
+        
+        return np.array(all_preds), np.array(all_probs), np.array(all_targets) 

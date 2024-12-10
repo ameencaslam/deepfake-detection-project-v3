@@ -6,30 +6,29 @@ from utils.visualization import VisualizationUtils
 import numpy as np
 
 class Trainer:
-    def __init__(self, model, train_loader, val_loader, test_loader):
+    def __init__(self, model, train_loader, val_loader, test_loader, rank=0):
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.test_loader = test_loader
+        self.rank = rank
         
         self.optimizer = model.get_optimizer()
         self.criterion = model.get_criterion()
-        self.tracker = TrainingTracker(model.model_name)
+        self.tracker = TrainingTracker(model.module.model_name if hasattr(model, 'module') else model.model_name)
         self.metrics_calculator = MetricsCalculator()
         self.visualizer = VisualizationUtils()
         
         # Set device
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        if torch.cuda.is_available():
-            torch.cuda.set_device(Config.GPU_IDS[0])
-        
-        # Move model to device
-        self.model = model.prepare_model()
+        self.device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")
         self.criterion = self.criterion.to(self.device)
     
     def train_epoch(self, epoch):
         """Train for one epoch"""
         self.model.train()
+        if hasattr(self.train_loader.sampler, 'set_epoch'):
+            self.train_loader.sampler.set_epoch(epoch)
+        
         self.tracker.init_epoch(epoch, len(self.train_loader))
         
         running_loss = 0.0
@@ -55,20 +54,22 @@ class Trainer:
             running_loss += loss.item()
             running_acc += acc
             
-            # Update progress
-            self.tracker.update_batch(
-                batch_idx,
-                loss.item(),
-                acc,
-                self.optimizer.param_groups[0]['lr'],
-                running_loss,
-                running_acc
-            )
+            # Update progress (only on rank 0)
+            if self.rank == 0:
+                self.tracker.update_batch(
+                    batch_idx,
+                    loss.item(),
+                    acc,
+                    self.optimizer.param_groups[0]['lr'],
+                    running_loss,
+                    running_acc
+                )
         
-        # Update epoch metrics
+        # Update epoch metrics (only on rank 0)
         epoch_loss = running_loss / len(self.train_loader)
         epoch_acc = running_acc / len(self.train_loader)
-        self.tracker.update_epoch(epoch_loss, epoch_acc)
+        if self.rank == 0:
+            self.tracker.update_epoch(epoch_loss, epoch_acc)
         
         return epoch_loss, epoch_acc
     
@@ -80,8 +81,9 @@ class Trainer:
         all_outputs = []
         all_targets = []
         
-        # Initialize validation progress bars
-        self.tracker.init_validation(len(loader))
+        # Initialize validation progress bars (only on rank 0)
+        if self.rank == 0:
+            self.tracker.init_validation(len(loader))
         
         with torch.no_grad():
             for batch_idx, (data, target) in enumerate(loader):
@@ -99,23 +101,25 @@ class Trainer:
                 running_loss += loss.item()
                 running_acc += acc
                 
-                # Update progress bars with batch metrics
-                batch_loss = loss.item()
-                batch_acc = acc
-                self.tracker.update_validation_batch(
-                    batch_idx,
-                    batch_loss,
-                    batch_acc,
-                    running_loss,
-                    running_acc
-                )
+                # Update progress bars with batch metrics (only on rank 0)
+                if self.rank == 0:
+                    batch_loss = loss.item()
+                    batch_acc = acc
+                    self.tracker.update_validation_batch(
+                        batch_idx,
+                        batch_loss,
+                        batch_acc,
+                        running_loss,
+                        running_acc
+                    )
                 
                 # Store predictions and targets for final metrics
                 all_outputs.append(output.squeeze())
                 all_targets.append(target)
         
-        # Close validation progress bars
-        self.tracker.close_validation()
+        # Close validation progress bars (only on rank 0)
+        if self.rank == 0:
+            self.tracker.close_validation()
         
         # Calculate final metrics
         val_loss = running_loss / len(loader)
@@ -127,25 +131,25 @@ class Trainer:
         metrics['loss'] = val_loss
         metrics['accuracy'] = val_acc
         
-        # Store validation metrics
-        self.tracker.metrics['val']['loss'].append(val_loss)
-        self.tracker.metrics['val']['accuracy'].append(metrics['accuracy'])
-        self.tracker.metrics['val']['auc_roc'].append(metrics['auc_roc'])
-        self.tracker.metrics['val']['f1_score'].append(metrics['f1_score'])
-        self.tracker.metrics['val']['confusion_matrix'].append(metrics['confusion_matrix'])
+        # Store validation metrics (only on rank 0)
+        if self.rank == 0:
+            self.tracker.metrics['val']['loss'].append(val_loss)
+            self.tracker.metrics['val']['accuracy'].append(metrics['accuracy'])
+            self.tracker.metrics['val']['auc_roc'].append(metrics['auc_roc'])
+            self.tracker.metrics['val']['f1_score'].append(metrics['f1_score'])
+            self.tracker.metrics['val']['confusion_matrix'].append(metrics['confusion_matrix'])
         
         return metrics
     
     def train(self, resume=False):
         """Full training loop"""
         start_epoch = 0
-        if resume:
+        if resume and self.rank == 0:
             start_epoch = self.tracker.load_checkpoint(
                 self.model,
                 self.optimizer
             )
         
-        print("\nStarting training...")
         for epoch in range(start_epoch, Config.NUM_EPOCHS):
             # Train
             train_loss, train_acc = self.train_epoch(epoch)
@@ -153,28 +157,29 @@ class Trainer:
             # Validate
             val_metrics = self.validate(self.val_loader)
             
-            # Print metrics
-            print(f"\nEpoch {epoch+1}/{Config.NUM_EPOCHS}")
-            print(f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%")
-            print(f"Val Loss: {val_metrics['loss']:.4f}, Val Acc: {val_metrics['accuracy']:.2f}%")
-            print(f"Val AUC-ROC: {val_metrics['auc_roc']:.4f}, Val F1: {val_metrics['f1_score']:.4f}")
-            
-            # Save checkpoint - now using validation loss as criterion
-            is_best = val_metrics['loss'] < self.tracker.metrics['best_metrics']['val_loss']
-            if is_best:
-                self.tracker.metrics['best_metrics'].update({
-                    'epoch': epoch,
-                    'val_acc': val_metrics['accuracy'],
-                    'val_loss': val_metrics['loss']
-                })
-                print(f"New best model! Val Loss: {val_metrics['loss']:.4f}")
-            
-            self.tracker.save_checkpoint(
-                self.model,
-                self.optimizer,
-                epoch,
-                is_best
-            )
+            # Print metrics and save checkpoints only on rank 0
+            if self.rank == 0:
+                print(f"\nEpoch {epoch+1}/{Config.NUM_EPOCHS}")
+                print(f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%")
+                print(f"Val Loss: {val_metrics['loss']:.4f}, Val Acc: {val_metrics['accuracy']:.2f}%")
+                print(f"Val AUC-ROC: {val_metrics['auc_roc']:.4f}, Val F1: {val_metrics['f1_score']:.4f}")
+                
+                # Save checkpoint - now using validation loss as criterion
+                is_best = val_metrics['loss'] < self.tracker.metrics['best_metrics']['val_loss']
+                if is_best:
+                    self.tracker.metrics['best_metrics'].update({
+                        'epoch': epoch,
+                        'val_acc': val_metrics['accuracy'],
+                        'val_loss': val_metrics['loss']
+                    })
+                    print(f"New best model! Val Loss: {val_metrics['loss']:.4f}")
+                
+                self.tracker.save_checkpoint(
+                    self.model,
+                    self.optimizer,
+                    epoch,
+                    is_best
+                )
             
             # Plot training progress
             self.visualizer.plot_training_history(self.tracker.metrics)

@@ -7,6 +7,7 @@ import numpy as np
 import os
 import sys
 import shutil
+import matplotlib.pyplot as plt
 
 class Trainer:
     def __init__(self, model, train_loader, val_loader, test_loader, device):
@@ -140,6 +141,26 @@ class Trainer:
         
         return metrics
     
+    def get_predictions(self, loader):
+        """Get model predictions for a data loader"""
+        self.model.eval()
+        all_probs = []
+        all_preds = []
+        all_targets = []
+        
+        with torch.no_grad():
+            for data, target in loader:
+                data = data.to(self.device)
+                output = self.model(data)
+                probs = torch.sigmoid(output).squeeze().cpu().numpy()
+                preds = (probs >= 0.5).astype(int)
+                
+                all_probs.extend(probs)
+                all_preds.extend(preds)
+                all_targets.extend(target.numpy())
+        
+        return np.array(all_preds), np.array(all_probs), np.array(all_targets)
+    
     def train(self, resume=False):
         """Full training loop"""
         start_epoch = 0
@@ -148,6 +169,9 @@ class Trainer:
                 self.model,
                 self.optimizer
             )
+        
+        # Create plots directory
+        os.makedirs('plots', exist_ok=True)
         
         for epoch in range(start_epoch, Config.NUM_EPOCHS):
             # Train
@@ -179,12 +203,14 @@ class Trainer:
                 is_best
             )
             
-            # Plot training progress after each epoch
-            self.visualizer.plot_training_history(self.tracker.metrics)
-            self.visualizer.save_plots('plots')
+            # Plot and save training progress
+            fig = self.visualizer.plot_training_history(self.tracker.metrics)
+            plt.savefig(os.path.join('plots', 'training_history.png'))
+            plt.close(fig)
         
         # Save checkpoints to zip at the end of training
         self.tracker.save_to_zip()
+        print("\nTraining plots saved to: plots/training_history.png")
     
     def test(self):
         """Test the model"""
@@ -195,7 +221,11 @@ class Trainer:
             'best'
         )
         
+        # Create plots directory
+        os.makedirs('plots', exist_ok=True)
+        
         # Get predictions and metrics
+        test_preds, test_probs, test_targets = self.get_predictions(self.test_loader)
         test_metrics = self.validate(self.test_loader)
         
         # Print results
@@ -205,25 +235,21 @@ class Trainer:
         print(f"Test AUC-ROC: {test_metrics['auc_roc']:.4f}")
         print(f"Test F1-Score: {test_metrics['f1_score']:.4f}")
         
+        # Create and save test plots
+        plots = {
+            'confusion_matrix': self.visualizer.plot_confusion_matrix(test_targets, test_preds),
+            'roc_curve': self.visualizer.plot_roc_curve(test_targets, test_probs),
+            'pred_dist': self.visualizer.plot_prediction_distribution(test_probs),
+            'metrics_summary': self.visualizer.plot_metrics_summary(test_metrics)
+        }
+        
+        # Save all plots
+        for name, fig in plots.items():
+            plt.figure(fig.number)
+            plt.savefig(os.path.join('plots', f'test_{name}.png'))
+            plt.close(fig)
+        
         # Save checkpoints to zip after testing
         self.tracker.save_to_zip()
-    
-    def get_predictions(self, loader):
-        """Get model predictions"""
-        self.model.eval()
-        all_preds = []
-        all_probs = []
-        all_targets = []
-        
-        with torch.no_grad():
-            for data, target in loader:
-                data = data.to(self.device)
-                output = self.model(data)
-                probs = torch.sigmoid(output.squeeze())
-                preds = (probs > 0.5).float()
-                
-                all_preds.extend(preds.cpu().numpy())
-                all_probs.extend(probs.cpu().numpy())
-                all_targets.extend(target.numpy())
-        
-        return np.array(all_preds), np.array(all_probs), np.array(all_targets) 
+        print("\nTest plots saved to plots directory:")
+        print("\n".join(f"- plots/test_{name}.png" for name in plots.keys())) 

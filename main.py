@@ -43,13 +43,27 @@ def get_model(model_name):
 def main():
     args = parse_args()
     
-    # Set device
-    torch.cuda.set_device(Config.GPU_IDS[0])
+    # Set device and print hardware info
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"\nUsing device: {device}")
+    
+    if device.type == "cuda":
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+        print(f"Available GPUs: {torch.cuda.device_count()}")
+        torch.cuda.set_device(Config.GPU_IDS[0])
+    else:
+        print("No GPU available. Training will be slower.")
+        print("Consider reducing batch size if memory issues occur.")
+        if Config.BATCH_SIZE > 16:
+            print(f"Automatically reducing batch size from {Config.BATCH_SIZE} to 16 for CPU training")
+            Config.BATCH_SIZE = 16
     
     # Get dataloaders
+    print("\nCreating dataloaders...")
     train_loader, val_loader, test_loader = get_dataloaders(args.model)
     
     # Create model
+    print(f"\nInitializing {args.model} model...")
     model = get_model(args.model)
     
     # Create trainer
@@ -57,9 +71,13 @@ def main():
     
     if args.test:
         # Test mode
+        print("\nRunning in test mode...")
         trainer.test()
     else:
         # Training mode
+        print("\nStarting training...")
+        if args.resume:
+            print("Resuming from checkpoint...")
         trainer.train(resume=args.resume)
 
 if __name__ == '__main__':

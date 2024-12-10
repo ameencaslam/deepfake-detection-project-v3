@@ -17,9 +17,10 @@ class MultiHeadAttention(nn.Module):
         )
         
     def forward(self, x):
-        # Reshape: (batch, seq_len, embed_dim)
-        batch_size, embed_dim, seq_len = x.shape
-        x = x.permute(2, 0, 1)  # (seq_len, batch, embed_dim)
+        # Reshape: (batch, embed_dim, height, width) -> (batch, seq_len, embed_dim)
+        batch_size, embed_dim, height, width = x.shape
+        seq_len = height * width
+        x = x.view(batch_size, embed_dim, seq_len).permute(2, 0, 1)  # (seq_len, batch, embed_dim)
         
         # Self-attention with first normalization
         attn_output, _ = self.mha(self.norm1(x), self.norm1(x), self.norm1(x))
@@ -28,9 +29,10 @@ class MultiHeadAttention(nn.Module):
         # MLP block with second normalization
         x = x + self.mlp(self.norm2(x))  # Skip connection
         
-        # Return to original shape
-        x = x.permute(1, 2, 0)  # (batch, embed_dim, seq_len)
+        # Return to original shape: (seq_len, batch, embed_dim) -> (batch, embed_dim, height, width)
+        x = x.permute(1, 2, 0).view(batch_size, embed_dim, height, width)
         return x
+
 
 class CNNTransformer(BaseModel):
     def __init__(self):

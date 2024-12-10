@@ -1,7 +1,7 @@
 import os
 import torch
 import numpy as np
-from torch.utils.data import Dataset, DataLoader, DistributedSampler
+from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from config.config import Config
 from .transforms import get_train_transforms, get_val_transforms
@@ -67,7 +67,7 @@ class DeepfakeDataset(Dataset):
             
         return image, label
 
-def get_dataloaders(model_name, rank=0, world_size=1, distributed=False):
+def get_dataloaders(model_name):
     """Create train, validation, and test dataloaders"""
     # Create transforms
     train_transform = get_train_transforms(model_name)
@@ -92,27 +92,19 @@ def get_dataloaders(model_name, rank=0, world_size=1, distributed=False):
         split='test'
     )
     
-    # Create samplers for distributed training
-    train_sampler = DistributedSampler(train_dataset) if distributed else None
-    val_sampler = DistributedSampler(val_dataset, shuffle=False) if distributed else None
-    test_sampler = DistributedSampler(test_dataset, shuffle=False) if distributed else None
-    
     # Create dataloaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=Config.BATCH_SIZE,
-        shuffle=(train_sampler is None),
-        sampler=train_sampler,
+        shuffle=True,
         num_workers=Config.NUM_WORKERS,
-        pin_memory=True,
-        drop_last=True  # Important for DDP to have same batch size across GPUs
+        pin_memory=True
     )
     
     val_loader = DataLoader(
         val_dataset,
         batch_size=Config.BATCH_SIZE,
         shuffle=False,
-        sampler=val_sampler,
         num_workers=Config.NUM_WORKERS,
         pin_memory=True
     )
@@ -121,7 +113,6 @@ def get_dataloaders(model_name, rank=0, world_size=1, distributed=False):
         test_dataset,
         batch_size=Config.BATCH_SIZE,
         shuffle=False,
-        sampler=test_sampler,
         num_workers=Config.NUM_WORKERS,
         pin_memory=True
     )

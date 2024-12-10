@@ -22,6 +22,8 @@ def parse_args():
                         help='Resume training from checkpoint')
     parser.add_argument('--test', action='store_true',
                         help='Evaluate model on test set')
+    parser.add_argument('--epochs', type=int, default=None,
+                        help='Number of epochs to train (default: from config)')
     return parser.parse_args()
 
 def get_model(model_name):
@@ -47,6 +49,10 @@ def main():
     Config.LOG_DIR = "/kaggle/working/logs"
     
     args = parse_args()
+    
+    # Update number of epochs if provided
+    if args.epochs is not None:
+        Config.NUM_EPOCHS = args.epochs
     
     # Set device and print hardware info
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

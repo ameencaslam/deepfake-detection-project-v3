@@ -24,6 +24,8 @@ def parse_args():
                         help='Evaluate model on test set')
     parser.add_argument('--epochs', type=int, default=None,
                         help='Number of epochs to train (default: from config)')
+    parser.add_argument('--batch', type=int, default=None,
+                        help='Batch size for training (default: from config)')
     parser.add_argument('--gpu', type=int, default=0,
                         help='GPU ID to use (default: 0)')
     return parser.parse_args()
@@ -56,6 +58,13 @@ def main():
     # Update number of epochs if provided
     if args.epochs is not None:
         Config.NUM_EPOCHS = args.epochs
+    
+    # Update batch size if provided
+    if args.batch is not None:
+        if isinstance(Config.BATCH_SIZE, dict):
+            Config.BATCH_SIZE[args.model] = args.batch
+        else:
+            Config.BATCH_SIZE = args.batch
     
     # Set device and print hardware info
     if torch.cuda.is_available():

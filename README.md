@@ -22,14 +22,40 @@ deepfake_detection/
 └── logs/             # Training logs
 ```
 
-## Models
+## Requirements
 
-- EfficientNet-B3
-- Swin Transformer
-- Two-Stream Network
-- Xception
-- CNN-Transformer Hybrid
-- Cross-Attention Hybrid
+- Python 3.7+
+- PyTorch 1.9.0+
+- CUDA (optional, will run on CPU if not available)
+
+### Core Dependencies
+
+```
+torch>=1.9.0
+torchvision>=0.10.0
+efficientnet-pytorch>=0.7.1
+timm>=0.5.4
+numpy>=1.19.5
+Pillow>=8.3.1
+scikit-learn>=0.24.2
+tqdm>=4.62.2
+```
+
+### Visualization Dependencies
+
+```
+matplotlib>=3.4.3
+seaborn>=0.11.2
+pandas>=1.3.0
+tensorboard>=2.7.0
+```
+
+### Additional Dependencies
+
+```
+opencv-python>=4.5.3
+albumentations>=1.1.0
+```
 
 ## Setup
 
@@ -45,6 +71,27 @@ pip install -r requirements.txt
 
 ```bash
 python main.py --model efficientnet
+```
+
+## Hardware Support
+
+The project automatically adapts to available hardware:
+
+- If CUDA-capable GPU is available: Uses GPU for training (recommended)
+- If no GPU is available: Falls back to CPU training
+- Multi-GPU: Automatically utilizes multiple GPUs if available
+
+### CPU Training
+
+When running on CPU:
+
+- Batch size might need adjustment (try smaller batches)
+- Training will be slower but all functionality remains
+- Modify batch size in `config.py`:
+
+```python
+# For CPU training, use smaller batch size
+Config.BATCH_SIZE = 16  # Adjust based on memory
 ```
 
 ## Training Options

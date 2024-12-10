@@ -25,9 +25,11 @@ class BaseModel(nn.Module):
         """Prepare model for training (multi-GPU if needed)"""
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        if torch.cuda.is_available():
+        if device.type == "cuda":
+            # GPU available
             self.to(device)
-            if Config.MULTI_GPU and len(Config.GPU_IDS) > 1:
+            if Config.MULTI_GPU and torch.cuda.device_count() > 1:
+                print(f"Using {torch.cuda.device_count()} GPUs!")
                 # Preserve model attributes before wrapping
                 model_attributes = {key: value for key, value in self.__dict__.items()
                                  if not key.startswith('_')}
@@ -35,4 +37,17 @@ class BaseModel(nn.Module):
                 # Restore attributes to DataParallel object
                 for key, value in model_attributes.items():
                     setattr(self.module, key, value)
+        else:
+            # CPU only
+            print("No GPU available. Using CPU. This will be slower!")
+            print("Consider reducing batch size if memory issues occur.")
+            self.to(device)
+        
         return self
+    
+    def get_device(self):
+        """Get the device the model is on"""
+        if hasattr(self, 'module'):
+            # Handle DataParallel
+            return next(self.module.parameters()).device
+        return next(self.parameters()).device

@@ -88,10 +88,8 @@ def main_worker(rank, world_size, args):
     if rank == 0:
         print(f"\nInitializing {args.model} model...")
     model = get_model(args.model)
-    model = model.to(device)
-    model = DDP(model, device_ids=[rank])
     
-    # Create trainer
+    # Create trainer (model will be moved to device and wrapped in DDP inside Trainer)
     trainer = Trainer(model, train_loader, val_loader, test_loader, rank)
     
     if args.test:

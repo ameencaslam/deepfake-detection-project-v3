@@ -7,21 +7,29 @@ import numpy as np
 
 class Trainer:
     def __init__(self, model, train_loader, val_loader, test_loader, rank=0):
-        self.model = model
+        self.rank = rank
+        self.device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")
+        
+        # Get optimizer and criterion before DDP wrapping
+        self.optimizer = model.get_optimizer()
+        self.criterion = model.get_criterion().to(self.device)
+        
+        # Store model name before DDP wrapping
+        self.model_name = model.model_name
+        
+        # Wrap model in DDP
+        self.model = model.to(self.device)
+        if torch.cuda.device_count() > 1:
+            self.model = DDP(model, device_ids=[rank])
+        
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.test_loader = test_loader
-        self.rank = rank
         
-        self.optimizer = model.get_optimizer()
-        self.criterion = model.get_criterion()
-        self.tracker = TrainingTracker(model.module.model_name if hasattr(model, 'module') else model.model_name)
+        # Initialize tracker and metrics
+        self.tracker = TrainingTracker(self.model_name)
         self.metrics_calculator = MetricsCalculator()
         self.visualizer = VisualizationUtils()
-        
-        # Set device
-        self.device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")
-        self.criterion = self.criterion.to(self.device)
     
     def train_epoch(self, epoch):
         """Train for one epoch"""

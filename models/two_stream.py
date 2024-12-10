@@ -3,6 +3,7 @@ import torch.nn as nn
 import torchvision.models as models
 import torch.nn.functional as F
 from .base_model import BaseModel
+from config.config import Config
 
 class FrequencyBranch(nn.Module):
     def __init__(self):
@@ -41,7 +42,8 @@ class SpatialBranch(nn.Module):
 
 class TwoStreamNetwork(BaseModel):
     def __init__(self):
-        super().__init__('two_stream')
+        super().__init__()
+        self.config = Config.MODEL_CONFIGS[self.model_name]
         
         # Create branches
         self.spatial_branch = SpatialBranch()

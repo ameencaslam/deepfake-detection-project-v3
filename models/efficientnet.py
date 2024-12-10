@@ -2,10 +2,11 @@ import torch
 import torch.nn as nn
 from efficientnet_pytorch import EfficientNet as EffNet
 from .base_model import BaseModel
-
+from config.config import Config
 class EfficientNet(BaseModel):
     def __init__(self):
-        super().__init__('efficientnet')
+        super().__init__()
+        self.config = Config.MODEL_CONFIGS[self.model_name]
         
         # Load pretrained model
         self.backbone = EffNet.from_pretrained(

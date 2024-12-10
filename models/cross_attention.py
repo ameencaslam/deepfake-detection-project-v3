@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 from .base_model import BaseModel
-
+from config.config import Config
 class CrossAttention(nn.Module):
     def __init__(self, dim, num_heads):
         super().__init__()
@@ -77,7 +77,8 @@ class FeatureExtractor(nn.Module):
 
 class CrossAttentionHybrid(BaseModel):
     def __init__(self):
-        super().__init__('cross_attention')
+        super().__init__()
+        self.config = Config.MODEL_CONFIGS[self.model_name]
         
         # Feature extractors
         self.spatial_extractor = FeatureExtractor(is_freq=False)

@@ -2,10 +2,11 @@ import torch
 import torch.nn as nn
 import timm
 from .base_model import BaseModel
-
+from config.config import Config
 class SwinTransformer(BaseModel):
     def __init__(self):
-        super().__init__('swin')
+        super().__init__()
+        self.config = Config.MODEL_CONFIGS[self.model_name]
         
         # Load pretrained Swin Transformer
         self.backbone = timm.create_model(

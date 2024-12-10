@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .base_model import BaseModel
+from config.config import Config
 
 class SeparableConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=1, stride=1, padding=0, dilation=1, bias=False):
@@ -67,7 +68,8 @@ class Block(nn.Module):
 
 class Xception(BaseModel):
     def __init__(self):
-        super().__init__('xception')
+        super().__init__()
+        self.config = Config.MODEL_CONFIGS[self.model_name]
         
         # Entry flow
         self.conv1 = nn.Conv2d(3, 32, 3, 2, 0, bias=False)

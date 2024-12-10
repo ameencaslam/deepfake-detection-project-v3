@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 from .base_model import BaseModel
-
+from config.config import Config
 class MultiHeadAttention(nn.Module):
     def __init__(self, embed_dim, num_heads):
         super().__init__()
@@ -34,7 +34,8 @@ class MultiHeadAttention(nn.Module):
 
 class CNNTransformer(BaseModel):
     def __init__(self):
-        super().__init__('cnn_transformer')
+        super().__init__()
+        self.config = Config.MODEL_CONFIGS[self.model_name]
         
         # CNN Backbone (ResNet50)
         resnet = models.resnet50(pretrained=True)

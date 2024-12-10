@@ -1,0 +1,9 @@
+torch>=1.9.0
+torchvision>=0.10.0
+efficientnet-pytorch>=0.7.1
+timm>=0.5.4  # for Swin Transformer
+numpy>=1.19.5
+Pillow>=8.3.1
+scikit-learn>=0.24.2
+tqdm>=4.62.2
+matplotlib>=3.4.3  # for visualization if needed 

@@ -163,7 +163,8 @@ class TrainingTracker:
         )
         
         if os.path.exists(checkpoint_path):
-            checkpoint = torch.load(checkpoint_path, weights_only=True)
+            print(f"Loading checkpoint from {checkpoint_path}")
+            checkpoint = torch.load(checkpoint_path)
             
             # Verify model architecture
             if 'model_name' in checkpoint and checkpoint['model_name'] != self.model_name:
@@ -176,7 +177,9 @@ class TrainingTracker:
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
                 self.metrics = checkpoint['metrics']
+                print(f"Successfully loaded checkpoint from epoch {checkpoint['epoch']}")
                 return checkpoint['epoch']
             except Exception as e:
                 raise ValueError(f"Error loading checkpoint: {str(e)}")
+        print("No checkpoint found, starting from scratch")
         return 0 

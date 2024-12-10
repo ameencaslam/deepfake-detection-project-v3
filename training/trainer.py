@@ -182,6 +182,9 @@ class Trainer:
             # Plot training progress after each epoch
             self.visualizer.plot_training_history(self.tracker.metrics)
             self.visualizer.save_plots('plots')
+        
+        # Save checkpoints to zip at the end of training
+        self.tracker.save_to_zip()
     
     def test(self):
         """Test the model"""
@@ -193,7 +196,6 @@ class Trainer:
         )
         
         # Get predictions and metrics
-        test_preds, test_probs, test_targets = self.get_predictions(self.test_loader)
         test_metrics = self.validate(self.test_loader)
         
         # Print results
@@ -203,26 +205,8 @@ class Trainer:
         print(f"Test AUC-ROC: {test_metrics['auc_roc']:.4f}")
         print(f"Test F1-Score: {test_metrics['f1_score']:.4f}")
         
-        # Plot test results
-        self.visualizer.plot_confusion_matrix(test_targets, test_preds)
-        self.visualizer.plot_roc_curve(test_targets, test_probs)
-        self.visualizer.plot_prediction_distribution(test_probs)
-        self.visualizer.plot_metrics_summary(test_metrics)
-        self.visualizer.save_plots('plots')
-        
-        # Zip checkpoints
-        if os.path.exists(Config.CHECKPOINT_DIR):
-            shutil.make_archive('checkpoints', 'zip', Config.CHECKPOINT_DIR)
-            print(f"\nCheckpoints saved to: checkpoints.zip")
-            
-            try:
-                from IPython.display import display, FileLink
-                if 'ipykernel' in sys.modules:  # Only if running in notebook
-                    display(FileLink('checkpoints.zip'))
-            except ImportError:
-                pass  # Not in a notebook environment
-        
-        return test_metrics
+        # Save checkpoints to zip after testing
+        self.tracker.save_to_zip()
     
     def get_predictions(self, loader):
         """Get model predictions"""

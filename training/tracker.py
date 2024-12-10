@@ -177,9 +177,19 @@ class TrainingTracker:
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
                 self.metrics = checkpoint['metrics']
-                print(f"Successfully loaded checkpoint from epoch {checkpoint['epoch']}")
+                total_epochs = checkpoint['epoch'] + 1
+                print(f"Successfully loaded checkpoint. Total epochs completed: {total_epochs}")
                 return checkpoint['epoch']
             except Exception as e:
                 raise ValueError(f"Error loading checkpoint: {str(e)}")
         print("No checkpoint found, starting from scratch")
-        return 0 
+        return 0
+
+    def save_to_zip(self):
+        """Save checkpoints to zip file"""
+        checkpoint_dir = os.path.join(Config.CHECKPOINT_DIR, self.model_name)
+        if os.path.exists(checkpoint_dir):
+            import shutil
+            zip_path = os.path.join(Config.CHECKPOINT_DIR, 'checkpoints.zip')
+            shutil.make_archive(os.path.splitext(zip_path)[0], 'zip', Config.CHECKPOINT_DIR)
+            print(f"\nCheckpoints saved to: {zip_path}")

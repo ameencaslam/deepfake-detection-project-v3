@@ -51,7 +51,7 @@ class Trainer:
             # Calculate accuracy
             acc = self.metrics_calculator.calculate_accuracy(output.squeeze(), target)
             
-            # Update metrics
+            # Update running metrics
             running_loss += loss.item()
             running_acc += acc
             
@@ -60,7 +60,9 @@ class Trainer:
                 batch_idx,
                 loss.item(),
                 acc,
-                self.optimizer.param_groups[0]['lr']
+                self.optimizer.param_groups[0]['lr'],
+                running_loss,
+                running_acc
             )
         
         # Update epoch metrics
@@ -74,11 +76,15 @@ class Trainer:
         """Validate the model"""
         self.model.eval()
         running_loss = 0.0
+        running_acc = 0.0
         all_outputs = []
         all_targets = []
         
+        # Initialize validation progress bars
+        self.tracker.init_validation(len(loader))
+        
         with torch.no_grad():
-            for data, target in loader:
+            for batch_idx, (data, target) in enumerate(loader):
                 data = data.to(self.device)
                 target = target.to(self.device)
                 
@@ -86,18 +92,47 @@ class Trainer:
                 output = self.model(data)
                 loss = self.criterion(output.squeeze(), target.float())
                 
-                # Store predictions and targets
+                # Calculate batch accuracy
+                acc = self.metrics_calculator.calculate_accuracy(output.squeeze(), target)
+                
+                # Update running metrics
+                running_loss += loss.item()
+                running_acc += acc
+                
+                # Update progress bars with batch metrics
+                batch_loss = loss.item()
+                batch_acc = acc
+                self.tracker.update_validation_batch(
+                    batch_idx,
+                    batch_loss,
+                    batch_acc,
+                    running_loss,
+                    running_acc
+                )
+                
+                # Store predictions and targets for final metrics
                 all_outputs.append(output.squeeze())
                 all_targets.append(target)
-                running_loss += loss.item()
         
-        # Calculate metrics
+        # Close validation progress bars
+        self.tracker.close_validation()
+        
+        # Calculate final metrics
         val_loss = running_loss / len(loader)
+        val_acc = running_acc / len(loader)
         metrics = self.metrics_calculator.calculate_epoch_metrics(
             all_outputs,
             all_targets
         )
         metrics['loss'] = val_loss
+        metrics['accuracy'] = val_acc
+        
+        # Store validation metrics
+        self.tracker.metrics['val']['loss'].append(val_loss)
+        self.tracker.metrics['val']['accuracy'].append(metrics['accuracy'])
+        self.tracker.metrics['val']['auc_roc'].append(metrics['auc_roc'])
+        self.tracker.metrics['val']['f1_score'].append(metrics['f1_score'])
+        self.tracker.metrics['val']['confusion_matrix'].append(metrics['confusion_matrix'])
         
         return metrics
     
@@ -110,24 +145,29 @@ class Trainer:
                 self.optimizer
             )
         
+        print("\nStarting training...")
         for epoch in range(start_epoch, Config.NUM_EPOCHS):
-            # Train and validate
+            # Train
             train_loss, train_acc = self.train_epoch(epoch)
+            
+            # Validate
             val_metrics = self.validate(self.val_loader)
             
             # Print metrics
             print(f"\nEpoch {epoch+1}/{Config.NUM_EPOCHS}")
             print(f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%")
-            self.metrics_calculator.print_metrics(val_metrics)
+            print(f"Val Loss: {val_metrics['loss']:.4f}, Val Acc: {val_metrics['accuracy']:.2f}%")
+            print(f"Val AUC-ROC: {val_metrics['auc_roc']:.4f}, Val F1: {val_metrics['f1_score']:.4f}")
             
-            # Save checkpoint
-            is_best = val_metrics['accuracy'] > self.tracker.metrics['best_metrics']['val_acc']
+            # Save checkpoint - now using validation loss as criterion
+            is_best = val_metrics['loss'] < self.tracker.metrics['best_metrics']['val_loss']
             if is_best:
                 self.tracker.metrics['best_metrics'].update({
                     'epoch': epoch,
                     'val_acc': val_metrics['accuracy'],
                     'val_loss': val_metrics['loss']
                 })
+                print(f"New best model! Val Loss: {val_metrics['loss']:.4f}")
             
             self.tracker.save_checkpoint(
                 self.model,

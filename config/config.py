@@ -13,7 +13,7 @@ class Config:
     # Model
     IMAGE_SIZE = {
         'efficientnet': 224,
-        'swin': 256,
+        'swin': 224,
         'two_stream': 224,
         'xception': 299,
         'cnn_transformer': 256,

@@ -31,49 +31,90 @@ class TrainingTracker:
         
         # Create progress bars
         self.epoch_pbar = None
-        self.metrics_pbar = None
         self.val_pbar = None
-        self.val_metrics_pbar = None
     
     def init_epoch(self, epoch, num_batches):
         """Initialize progress bars for new epoch"""
         # Clear any existing progress bars
         if self.epoch_pbar is not None:
             self.epoch_pbar.close()
-        if self.metrics_pbar is not None:
-            self.metrics_pbar.close()
-            
+        
+        desc = f'Epoch [{epoch+1}/{Config.NUM_EPOCHS}]'
+        bar_format = '{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}'
+        
         self.epoch_pbar = tqdm(
             total=num_batches,
-            desc=f'Epoch [{epoch+1}/{Config.NUM_EPOCHS}]',
-            position=0,
-            leave=True,
-            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]'
-        )
-        
-        self.metrics_pbar = tqdm(
-            bar_format='{desc}',
-            position=1,
+            desc=desc,
+            bar_format=bar_format,
             leave=True
         )
+        # Initialize postfix dict for metrics
+        self.epoch_pbar.set_postfix({
+            'loss': '?',
+            'avg_loss': '?',
+            'acc': '?',
+            'avg_acc': '?',
+            'lr': '?'
+        })
     
     def update_batch(self, batch_idx, loss, acc, lr, running_loss=None, running_acc=None):
         """Update batch progress with running averages"""
         self.epoch_pbar.update(1)
         
         # Calculate running averages if provided
-        avg_loss = running_loss / (batch_idx + 1) if running_loss is not None else loss
-        avg_acc = running_acc / (batch_idx + 1) if running_acc is not None else acc
+        avg_loss = f"{running_loss / (batch_idx + 1):.4f}" if running_loss is not None else "?"
+        avg_acc = f"{running_acc / (batch_idx + 1):.2f}" if running_acc is not None else "?"
         
-        if batch_idx % Config.LOG_INTERVAL == 0:
-            self.metrics_pbar.set_description_str(
-                f'Loss: {loss:.4f} (avg: {avg_loss:.4f}) | Acc: {acc:.2f}% (avg: {avg_acc:.2f}%) | LR: {lr:.6f}'
-            )
-            
+        # Update metrics in progress bar
+        self.epoch_pbar.set_postfix({
+            'loss': f"{loss:.4f}",
+            'avg_loss': avg_loss,
+            'acc': f"{acc:.2f}%",
+            'avg_acc': f"{avg_acc}%",
+            'lr': f"{lr:.6f}"
+        }, refresh=True)
+        
         # Store metrics
         self.metrics['train']['batch_loss'].append(loss)
         self.metrics['train']['batch_acc'].append(acc)
         self.metrics['train']['learning_rates'].append(lr)
+    
+    def init_validation(self, num_batches):
+        """Initialize validation progress bars"""
+        # Clear any existing progress bars
+        if self.val_pbar is not None:
+            self.val_pbar.close()
+        
+        bar_format = 'Validating: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}'
+        
+        self.val_pbar = tqdm(
+            total=num_batches,
+            bar_format=bar_format,
+            leave=True
+        )
+        # Initialize postfix dict for metrics
+        self.val_pbar.set_postfix({
+            'loss': '?',
+            'avg_loss': '?',
+            'acc': '?',
+            'avg_acc': '?'
+        })
+    
+    def update_validation_batch(self, batch_idx, loss, acc, running_loss, running_acc):
+        """Update validation progress with running averages"""
+        self.val_pbar.update(1)
+        
+        # Calculate running averages
+        avg_loss = running_loss / (batch_idx + 1)
+        avg_acc = running_acc / (batch_idx + 1)
+        
+        # Update metrics in progress bar
+        self.val_pbar.set_postfix({
+            'loss': f"{loss:.4f}",
+            'avg_loss': f"{avg_loss:.4f}",
+            'acc': f"{acc:.2f}%",
+            'avg_acc': f"{avg_acc:.2f}%"
+        }, refresh=True)
     
     def update_epoch(self, epoch_loss, epoch_acc):
         """Update epoch metrics"""
@@ -81,8 +122,13 @@ class TrainingTracker:
         self.metrics['train']['epoch_acc'].append(epoch_acc)
         
         # Close progress bars
-        self.epoch_pbar.close()
-        self.metrics_pbar.close()
+        if self.epoch_pbar is not None:
+            self.epoch_pbar.close()
+    
+    def close_validation(self):
+        """Close validation progress bars"""
+        if self.val_pbar is not None:
+            self.val_pbar.close()
     
     def save_checkpoint(self, model, optimizer, epoch, is_best=False):
         """Save model checkpoint"""
@@ -139,44 +185,3 @@ class TrainingTracker:
             except Exception as e:
                 raise ValueError(f"Error loading checkpoint: {str(e)}")
         return 0 
-    
-    def init_validation(self, num_batches):
-        """Initialize validation progress bars"""
-        # Clear any existing validation progress bars
-        if self.val_pbar is not None:
-            self.val_pbar.close()
-        if self.val_metrics_pbar is not None:
-            self.val_metrics_pbar.close()
-            
-        self.val_pbar = tqdm(
-            total=num_batches,
-            desc='Validating',
-            position=0,
-            leave=True,
-            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]'
-        )
-        
-        self.val_metrics_pbar = tqdm(
-            bar_format='{desc}',
-            position=1,
-            leave=True
-        )
-    
-    def update_validation_batch(self, batch_idx, loss, acc, running_loss, running_acc):
-        """Update validation progress with running averages"""
-        self.val_pbar.update(1)
-        
-        # Calculate running averages
-        avg_loss = running_loss / (batch_idx + 1)
-        avg_acc = running_acc / (batch_idx + 1)
-        
-        self.val_metrics_pbar.set_description_str(
-            f'Val Loss: {loss:.4f} (avg: {avg_loss:.4f}) | Val Acc: {acc:.2f}% (avg: {avg_acc:.2f}%)'
-        )
-    
-    def close_validation(self):
-        """Close validation progress bars"""
-        if self.val_pbar is not None:
-            self.val_pbar.close()
-        if self.val_metrics_pbar is not None:
-            self.val_metrics_pbar.close()

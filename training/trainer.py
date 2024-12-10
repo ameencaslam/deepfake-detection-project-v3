@@ -9,6 +9,11 @@ import sys
 import shutil
 import matplotlib.pyplot as plt
 
+# Set matplotlib backend for Jupyter compatibility
+import matplotlib
+if 'ipykernel' in sys.modules:
+    matplotlib.use('Agg')
+
 class Trainer:
     def __init__(self, model, train_loader, val_loader, test_loader, device):
         self.device = device
@@ -205,8 +210,16 @@ class Trainer:
             
             # Plot and save training progress
             fig = self.visualizer.plot_training_history(self.tracker.metrics)
-            plt.savefig(os.path.join('plots', 'training_history.png'))
+            plt.savefig(os.path.join('plots', 'training_history.png'), bbox_inches='tight', dpi=300)
             plt.close(fig)
+            
+            # Display plot in notebook if in notebook environment
+            if 'ipykernel' in sys.modules:
+                try:
+                    from IPython.display import display, Image
+                    display(Image('plots/training_history.png'))
+                except ImportError:
+                    pass
         
         # Save checkpoints to zip at the end of training
         self.tracker.save_to_zip()
@@ -243,11 +256,23 @@ class Trainer:
             'metrics_summary': self.visualizer.plot_metrics_summary(test_metrics)
         }
         
-        # Save all plots
-        for name, fig in plots.items():
-            plt.figure(fig.number)
-            plt.savefig(os.path.join('plots', f'test_{name}.png'))
-            plt.close(fig)
+        # Save and display all plots
+        if 'ipykernel' in sys.modules:
+            try:
+                from IPython.display import display, Image
+                for name, fig in plots.items():
+                    plt.figure(fig.number)
+                    save_path = os.path.join('plots', f'test_{name}.png')
+                    plt.savefig(save_path, bbox_inches='tight', dpi=300)
+                    display(Image(save_path))
+                    plt.close(fig)
+            except ImportError:
+                pass
+        else:
+            for name, fig in plots.items():
+                plt.figure(fig.number)
+                plt.savefig(os.path.join('plots', f'test_{name}.png'), bbox_inches='tight', dpi=300)
+                plt.close(fig)
         
         # Save checkpoints to zip after testing
         self.tracker.save_to_zip()

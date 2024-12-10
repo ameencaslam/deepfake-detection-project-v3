@@ -24,10 +24,6 @@ class Config:
     LEARNING_RATE = 1e-4
     WEIGHT_DECAY = 1e-5
     
-    # Device
-    MULTI_GPU = True
-    GPU_IDS = [0, 1]
-    
     # Logging
     LOG_INTERVAL = 10
     CHECKPOINT_DIR = "checkpoints"

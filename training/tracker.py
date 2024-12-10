@@ -137,8 +137,7 @@ class TrainingTracker:
         
         state = {
             'epoch': epoch,
-            'model_name': self.model_name,  # Save model architecture info
-            'model_state_dict': model.module.state_dict() if Config.MULTI_GPU else model.state_dict(),
+            'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'metrics': self.metrics
         }
@@ -175,10 +174,7 @@ class TrainingTracker:
                 )
             
             try:
-                if Config.MULTI_GPU:
-                    model.module.load_state_dict(checkpoint['model_state_dict'])
-                else:
-                    model.load_state_dict(checkpoint['model_state_dict'])
+                model.load_state_dict(checkpoint['model_state_dict'])
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
                 self.metrics = checkpoint['metrics']
                 return checkpoint['epoch']

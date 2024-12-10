@@ -5,7 +5,9 @@ from config.config import Config
 class BaseModel(nn.Module):
     def __init__(self):
         super().__init__()
-        self.model_name = self.__class__.__name__.lower()
+        # Only set model_name if not already set by child class
+        if not hasattr(self, 'model_name'):
+            self.model_name = self.__class__.__name__.lower()
     
     def prepare_model(self):
         """Prepare model for training"""

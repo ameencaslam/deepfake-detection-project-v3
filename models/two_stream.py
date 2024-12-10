@@ -42,6 +42,7 @@ class SpatialBranch(nn.Module):
 
 class TwoStreamNetwork(BaseModel):
     def __init__(self):
+        self.model_name = 'two_stream'
         super().__init__()
         self.config = Config.MODEL_CONFIGS[self.model_name]
         

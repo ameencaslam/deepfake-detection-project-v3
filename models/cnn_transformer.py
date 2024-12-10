@@ -34,6 +34,7 @@ class MultiHeadAttention(nn.Module):
 
 class CNNTransformer(BaseModel):
     def __init__(self):
+        self.model_name = 'cnn_transformer'
         super().__init__()
         self.config = Config.MODEL_CONFIGS[self.model_name]
         

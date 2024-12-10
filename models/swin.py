@@ -3,8 +3,10 @@ import torch.nn as nn
 import timm
 from .base_model import BaseModel
 from config.config import Config
+
 class SwinTransformer(BaseModel):
     def __init__(self):
+        self.model_name = 'swin'  # Set model name before super().__init__()
         super().__init__()
         self.config = Config.MODEL_CONFIGS[self.model_name]
         
@@ -15,9 +17,9 @@ class SwinTransformer(BaseModel):
             num_classes=0  # Remove classification head
         )
         
-        # Get feature dimension
+        # Get feature dimension using correct image size
         with torch.no_grad():
-            dummy_input = torch.zeros(1, 3, 224, 224)
+            dummy_input = torch.zeros(1, 3, Config.IMAGE_SIZE[self.model_name], Config.IMAGE_SIZE[self.model_name])
             features = self.backbone(dummy_input)
             feature_dim = features.shape[1]
         

@@ -77,6 +77,7 @@ class FeatureExtractor(nn.Module):
 
 class CrossAttentionHybrid(BaseModel):
     def __init__(self):
+        self.model_name = 'cross_attention'
         super().__init__()
         self.config = Config.MODEL_CONFIGS[self.model_name]
         

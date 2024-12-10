@@ -5,6 +5,7 @@ from .base_model import BaseModel
 from config.config import Config
 class EfficientNet(BaseModel):
     def __init__(self):
+        self.model_name = 'efficientnet'
         super().__init__()
         self.config = Config.MODEL_CONFIGS[self.model_name]
         

@@ -68,6 +68,7 @@ class Block(nn.Module):
 
 class Xception(BaseModel):
     def __init__(self):
+        self.model_name = 'xception'
         super().__init__()
         self.config = Config.MODEL_CONFIGS[self.model_name]
         

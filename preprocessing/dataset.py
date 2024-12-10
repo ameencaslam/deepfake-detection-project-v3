@@ -22,13 +22,9 @@ class DeepfakeDataset(Dataset):
         self.real_dir = os.path.join(root_dir, 'real')
         self.fake_dir = os.path.join(root_dir, 'fake')
         
-        real_images = [os.path.join('real', img) for img in os.listdir(self.real_dir)]
-        fake_images = [os.path.join('fake', img) for img in os.listdir(self.fake_dir)]
-        
-        # Shuffle images
-        np.random.seed(42)  # for reproducibility
-        np.random.shuffle(real_images)
-        np.random.shuffle(fake_images)
+        # Get sorted list of images to ensure deterministic order
+        real_images = sorted([os.path.join('real', img) for img in os.listdir(self.real_dir)])
+        fake_images = sorted([os.path.join('fake', img) for img in os.listdir(self.fake_dir)])
         
         # Calculate split indices
         n_real = len(real_images)
@@ -51,17 +47,13 @@ class DeepfakeDataset(Dataset):
             self.real_images = real_images[real_val_idx:]
             self.fake_images = fake_images[fake_val_idx:]
         
-        # Combine and shuffle data
-        all_images = list(zip(self.real_images + self.fake_images, 
-                             [0] * len(self.real_images) + [1] * len(self.fake_images)))
-        np.random.shuffle(all_images)
-        self.image_paths, self.labels = zip(*all_images)
-        self.image_paths = list(self.image_paths)
-        self.labels = list(self.labels)
+        # Combine real and fake images (no shuffling needed)
+        self.image_paths = self.real_images + self.fake_images
+        self.labels = [0] * len(self.real_images) + [1] * len(self.fake_images)
         
         print(f"{split} set size: {len(self.image_paths)} images "
               f"({len(self.real_images)} real, {len(self.fake_images)} fake)")
-        
+    
     def __len__(self):
         return len(self.image_paths)
     

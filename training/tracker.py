@@ -193,3 +193,8 @@ class TrainingTracker:
         from utils.checkpoint_utils import zip_checkpoints
         print("\nWarning: This method is deprecated. Use utils.checkpoint_utils.zip_checkpoints instead.")
         return zip_checkpoints()
+
+    def get_checkpoint_dir(self):
+        """Get the path to the checkpoint directory"""
+        checkpoint_dir = os.path.join("/kaggle/working/checkpoints", self.model_name)
+        return checkpoint_dir if os.path.exists(checkpoint_dir) else None

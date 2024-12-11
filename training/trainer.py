@@ -186,11 +186,18 @@ class Trainer:
                 self.model,
                 self.optimizer
             )
+            
+            # Check if we've completed all epochs
             if start_epoch >= Config.NUM_EPOCHS:
-                print(f"\nTraining already completed ({start_epoch} epochs). Starting fresh.")
+                print(f"\nTraining already completed ({start_epoch}/{Config.NUM_EPOCHS} epochs). Starting fresh.")
                 self.tracker.reset_training()
                 start_epoch = 0
                 checkpoint_dir = None
+            else:
+                print(f"\nResuming training from epoch {start_epoch + 1}/{Config.NUM_EPOCHS}")
+        else:
+            print("\nStarting fresh training...")
+            self.tracker.reset_training()
         
         # Initialize visualization manager for training
         self.visualizer = VisualizationManager(

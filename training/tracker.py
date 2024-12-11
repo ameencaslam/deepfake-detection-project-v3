@@ -45,10 +45,14 @@ class TrainingTracker:
         """Load or initialize training state"""
         if os.path.exists(self.training_state_file):
             with open(self.training_state_file, 'r') as f:
-                return json.load(f)
+                state = json.load(f)
+                # Update total_epochs if it changed but keep completed_epochs
+                state['total_epochs'] = Config.NUM_EPOCHS
+                return state
         return {
             'completed_epochs': 0,
-            'total_epochs': Config.NUM_EPOCHS
+            'total_epochs': Config.NUM_EPOCHS,
+            'best_val_loss': float('inf')
         }
 
     def _save_training_state(self):
@@ -220,22 +224,50 @@ class TrainingTracker:
                 
                 # Load training state
                 if os.path.exists(self.training_state_file):
-                    with open(self.training_state_file, 'r') as f:
-                        self.training_state = json.load(f)
+                    self.training_state = self._load_training_state()  # This will update total_epochs
                 
                 completed_epochs = self.training_state['completed_epochs']
+                remaining_epochs = Config.NUM_EPOCHS - completed_epochs
                 print(f"Successfully loaded checkpoint. Completed epochs: {completed_epochs}")
+                print(f"Remaining epochs: {remaining_epochs}")
                 return completed_epochs
             except Exception as e:
                 raise ValueError(f"Error loading checkpoint: {str(e)}")
         
-        print("No checkpoint found, starting from scratch")
+        print("No checkpoint found, starting fresh training...")
         return 0
 
     def reset_training(self):
         """Reset training state"""
-        self.training_state['completed_epochs'] = 0
+        self.training_state = {
+            'completed_epochs': 0,
+            'total_epochs': Config.NUM_EPOCHS,
+            'best_val_loss': float('inf')
+        }
         self._save_training_state()
+        
+        # Also reset metrics
+        self.metrics = {
+            'train': {
+                'batch_loss': [],
+                'epoch_loss': [],
+                'batch_acc': [],
+                'epoch_acc': [],
+                'learning_rates': []
+            },
+            'val': {
+                'loss': [],
+                'accuracy': [],
+                'auc_roc': [],
+                'f1_score': [],
+                'confusion_matrix': []
+            },
+            'best_metrics': {
+                'epoch': 0,
+                'val_acc': 0,
+                'val_loss': float('inf')
+            }
+        }
 
     def save_to_zip(self):
         """This method is deprecated. Use utils.checkpoint_utils.zip_checkpoints instead."""

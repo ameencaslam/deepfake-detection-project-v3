@@ -8,6 +8,13 @@ import numpy as np
 class TrainingTracker:
     def __init__(self, model_name):
         self.model_name = model_name
+        self.checkpoint_dir = os.path.join(Config.CHECKPOINT_DIR, self.model_name)
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        
+        # Initialize or load training state
+        self.training_state_file = os.path.join(self.checkpoint_dir, 'training_state.json')
+        self.training_state = self._load_training_state()
+        
         self.metrics = {
             'train': {
                 'batch_loss': [],
@@ -33,6 +40,21 @@ class TrainingTracker:
         # Create progress bars
         self.epoch_pbar = None
         self.val_pbar = None
+    
+    def _load_training_state(self):
+        """Load or initialize training state"""
+        if os.path.exists(self.training_state_file):
+            with open(self.training_state_file, 'r') as f:
+                return json.load(f)
+        return {
+            'completed_epochs': 0,
+            'total_epochs': Config.NUM_EPOCHS
+        }
+
+    def _save_training_state(self):
+        """Save training state"""
+        with open(self.training_state_file, 'w') as f:
+            json.dump(self.training_state, f, indent=4)
     
     def init_epoch(self, epoch, num_batches):
         """Initialize progress bars for new epoch"""
@@ -120,15 +142,19 @@ class TrainingTracker:
         }, refresh=True)
     
     def update_epoch(self, epoch_loss, epoch_acc):
-        """Update epoch metrics"""
+        """Update epoch metrics and training state"""
         # Convert to float to ensure JSON serialization
         self.metrics['train']['epoch_loss'].append(float(epoch_loss))
         self.metrics['train']['epoch_acc'].append(float(epoch_acc))
         
+        # Update training state
+        self.training_state['completed_epochs'] += 1
+        self._save_training_state()
+        
         # Close progress bars
         if self.epoch_pbar is not None:
             self.epoch_pbar.close()
-            self.epoch_pbar = None  # Clear the reference
+            self.epoch_pbar = None
     
     def close_validation(self):
         """Close validation progress bars"""
@@ -173,12 +199,8 @@ class TrainingTracker:
             json.dump(metrics_json, f, indent=4)
     
     def load_checkpoint(self, model, optimizer, checkpoint_type='last'):
-        """Load model checkpoint"""
-        checkpoint_path = os.path.join(
-            Config.CHECKPOINT_DIR,
-            self.model_name,
-            f'{checkpoint_type}.pth'
-        )
+        """Load model checkpoint and return next epoch number"""
+        checkpoint_path = os.path.join(self.checkpoint_dir, f'{checkpoint_type}.pth')
         
         if os.path.exists(checkpoint_path):
             print(f"Loading checkpoint from {checkpoint_path}")
@@ -195,14 +217,25 @@ class TrainingTracker:
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
                 self.metrics = checkpoint['metrics']
-                # Get the next epoch number (0-based)
-                next_epoch = checkpoint['epoch'] + 1
-                print(f"Successfully loaded checkpoint from epoch {checkpoint['epoch'] + 1}")
-                return next_epoch
+                
+                # Load training state
+                if os.path.exists(self.training_state_file):
+                    with open(self.training_state_file, 'r') as f:
+                        self.training_state = json.load(f)
+                
+                completed_epochs = self.training_state['completed_epochs']
+                print(f"Successfully loaded checkpoint. Completed epochs: {completed_epochs}")
+                return completed_epochs
             except Exception as e:
                 raise ValueError(f"Error loading checkpoint: {str(e)}")
+        
         print("No checkpoint found, starting from scratch")
         return 0
+
+    def reset_training(self):
+        """Reset training state"""
+        self.training_state['completed_epochs'] = 0
+        self._save_training_state()
 
     def save_to_zip(self):
         """This method is deprecated. Use utils.checkpoint_utils.zip_checkpoints instead."""

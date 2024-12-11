@@ -1,6 +1,8 @@
 import argparse
 import mlflow
+import torch
 from config.config import Config
+from config.mlflow_config import MLflowConfig
 from preprocessing.dataset import get_dataloaders
 from models import (
     EfficientNet,
@@ -11,7 +13,6 @@ from models import (
     CrossAttentionHybrid
 )
 from training.trainer import Trainer
-from config.mlflow_config import MLflowConfig
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Deepfake Detection Training')

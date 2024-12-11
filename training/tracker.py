@@ -229,19 +229,26 @@ class TrainingTracker:
         }, refresh=True)
     
     def update_epoch(self, epoch_loss, epoch_acc):
-        """Update epoch metrics and training state"""
-        # Convert to float to ensure JSON serialization
-        self.metrics['train']['epoch_loss'].append(float(epoch_loss))
-        self.metrics['train']['epoch_acc'].append(float(epoch_acc))
-        
+        """Update epoch metrics"""
         # Update training state
         self.training_state['completed_epochs'] += 1
-        self._save_training_state()
         
-        # Close progress bars
-        if self.epoch_pbar is not None:
-            self.epoch_pbar.close()
-            self.epoch_pbar = None
+        # Update best metrics if needed
+        if epoch_loss < self.training_state.get('best_val_loss', float('inf')):
+            self.training_state['best_val_loss'] = epoch_loss
+            self.training_state['best_epoch'] = self.training_state['completed_epochs']
+        
+        # Log metrics to MLflow
+        with mlflow.start_run(run_id=mlflow.active_run().info.run_id):
+            mlflow.log_metrics({
+                'epoch_loss': epoch_loss,
+                'epoch_accuracy': epoch_acc,
+                'best_val_loss': self.training_state['best_val_loss'],
+                'best_epoch': self.training_state.get('best_epoch', 0)
+            }, step=self.training_state['completed_epochs'])
+        
+        # Save updated training state
+        self._save_training_state()
     
     def close_validation(self):
         """Close validation progress bars"""
@@ -290,3 +297,8 @@ class TrainingTracker:
         """Get the path to the checkpoint directory"""
         checkpoint_dir = os.path.join("/kaggle/working/checkpoints", self.model_name)
         return checkpoint_dir if os.path.exists(checkpoint_dir) else None
+
+    def _save_training_state(self):
+        """Save training state to MLflow"""
+        if mlflow.active_run():
+            mlflow.log_param('training_state', json.dumps(self.training_state))

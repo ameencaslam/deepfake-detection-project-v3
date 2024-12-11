@@ -3,7 +3,7 @@ import mlflow
 
 class MLflowConfig:
     # MLflow tracking URI (local or remote)
-    TRACKING_URI = "mlflow"  # For local sqlite database
+    TRACKING_URI = "file:///kaggle/working/mlruns"  # Changed to local file system
     
     # Experiment naming
     EXPERIMENT_NAME_PREFIX = "deepfake_detection"
@@ -25,4 +25,11 @@ class MLflowConfig:
     @staticmethod
     def get_experiment_name(model_name):
         """Get experiment name for model"""
-        return f"{MLflowConfig.EXPERIMENT_NAME_PREFIX}_{model_name}" 
+        return f"{MLflowConfig.EXPERIMENT_NAME_PREFIX}_{model_name}"
+    
+    @staticmethod
+    def ensure_no_active_run():
+        """End any active run"""
+        active_run = mlflow.active_run()
+        if active_run:
+            mlflow.end_run()

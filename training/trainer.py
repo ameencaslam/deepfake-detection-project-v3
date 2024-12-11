@@ -185,7 +185,10 @@ class Trainer:
     
     def train(self, resume=False):
         """Full training loop"""
-        with mlflow.start_run(run_name=f"train_{self.model.model_name}"):
+        # Ensure no active run
+        MLflowConfig.ensure_no_active_run()
+        
+        with mlflow.start_run(run_name=f"train_{self.model.model_name}") as run:
             # Log model parameters
             mlflow.log_params({
                 "model_name": self.model.model_name,

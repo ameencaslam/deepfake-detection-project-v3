@@ -189,10 +189,7 @@ class TrainingTracker:
         return 0
 
     def save_to_zip(self):
-        """Save checkpoints to zip file"""
-        checkpoint_dir = os.path.join(Config.CHECKPOINT_DIR, self.model_name)
-        if os.path.exists(checkpoint_dir):
-            import shutil
-            zip_path = os.path.join(Config.CHECKPOINT_DIR, 'checkpoints.zip')
-            shutil.make_archive(os.path.splitext(zip_path)[0], 'zip', Config.CHECKPOINT_DIR)
-            print(f"\nCheckpoints saved to: {zip_path}")
+        """This method is deprecated. Use utils.checkpoint_utils.zip_checkpoints instead."""
+        from utils.checkpoint_utils import zip_checkpoints
+        print("\nWarning: This method is deprecated. Use utils.checkpoint_utils.zip_checkpoints instead.")
+        return zip_checkpoints()

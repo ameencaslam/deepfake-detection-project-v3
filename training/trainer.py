@@ -6,7 +6,6 @@ from utils.visualization import VisualizationManager
 import numpy as np
 import os
 import sys
-import shutil
 
 class Trainer:
     def __init__(self, model, train_loader, val_loader, test_loader, device):
@@ -232,8 +231,6 @@ class Trainer:
             # Update and save plots
             self.visualizer.plot_all()
         
-        # Save checkpoints to zip at the end of training
-        self.tracker.save_to_zip()
         print(f"\nTraining plots saved to: {self.visualizer.model_plot_dir}")
     
     def test(self):

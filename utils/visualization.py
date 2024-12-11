@@ -1,6 +1,7 @@
 import os
 import json
 from datetime import datetime
+import glob
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Set backend before importing pyplot
@@ -117,87 +118,90 @@ class VisualizationManager:
                                              'prob': y_prob.tolist()}
     
     def plot_training_progress(self):
-        """Plot training progress (loss, accuracy, learning rate)"""
-        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-        fig.suptitle(f'Training Progress - {self.model_name}', fontsize=14)
-        
+        """Plot training progress metrics separately"""
         # Plot loss
         if self.metrics['train']['epoch_loss']:
-            axes[0, 0].plot(self.metrics['train']['epoch_loss'], 
-                          color=self.colors['train'], label='Train Loss')
+            plt.figure(figsize=(10, 6))
+            plt.plot(self.metrics['train']['epoch_loss'], 
+                    color=self.colors['train'], label='Train Loss')
             if self.metrics['val']['loss']:
-                axes[0, 0].plot(self.metrics['val']['loss'], 
-                              color=self.colors['val'], label='Val Loss')
-            axes[0, 0].set_title('Loss History')
-            axes[0, 0].set_xlabel('Epoch')
-            axes[0, 0].set_ylabel('Loss')
-            axes[0, 0].legend()
-            axes[0, 0].grid(True)
+                plt.plot(self.metrics['val']['loss'], 
+                        color=self.colors['val'], label='Val Loss')
+            plt.title(f'Loss History - {self.model_name}')
+            plt.xlabel('Epoch')
+            plt.ylabel('Loss')
+            plt.legend()
+            plt.grid(True)
+            save_path = os.path.join(self.model_plot_dir, 'loss_history.png')
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.close()
         
         # Plot accuracy
         if self.metrics['train']['epoch_acc']:
-            axes[0, 1].plot(self.metrics['train']['epoch_acc'], 
-                          color=self.colors['train'], label='Train Acc')
+            plt.figure(figsize=(10, 6))
+            plt.plot(self.metrics['train']['epoch_acc'], 
+                    color=self.colors['train'], label='Train Acc')
             if self.metrics['val']['accuracy']:
-                axes[0, 1].plot(self.metrics['val']['accuracy'], 
-                              color=self.colors['val'], label='Val Acc')
-            axes[0, 1].set_title('Accuracy History')
-            axes[0, 1].set_xlabel('Epoch')
-            axes[0, 1].set_ylabel('Accuracy')
-            axes[0, 1].legend()
-            axes[0, 1].grid(True)
+                plt.plot(self.metrics['val']['accuracy'], 
+                        color=self.colors['val'], label='Val Acc')
+            plt.title(f'Accuracy History - {self.model_name}')
+            plt.xlabel('Epoch')
+            plt.ylabel('Accuracy')
+            plt.legend()
+            plt.grid(True)
+            save_path = os.path.join(self.model_plot_dir, 'accuracy_history.png')
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.close()
         
         # Plot learning rate
         if self.metrics['train']['learning_rates']:
-            axes[1, 0].plot(self.metrics['train']['learning_rates'], 
-                          color=self.colors['train'])
-            axes[1, 0].set_title('Learning Rate')
-            axes[1, 0].set_xlabel('Iteration')
-            axes[1, 0].set_ylabel('Learning Rate')
-            axes[1, 0].grid(True)
+            plt.figure(figsize=(10, 6))
+            plt.plot(self.metrics['train']['learning_rates'], 
+                    color=self.colors['train'])
+            plt.title(f'Learning Rate - {self.model_name}')
+            plt.xlabel('Iteration')
+            plt.ylabel('Learning Rate')
+            plt.grid(True)
+            save_path = os.path.join(self.model_plot_dir, 'learning_rate.png')
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.close()
         
         # Plot validation metrics
         if self.metrics['val']['auc_roc'] and self.metrics['val']['f1_score']:
+            plt.figure(figsize=(10, 6))
             epochs = range(len(self.metrics['val']['auc_roc']))
-            axes[1, 1].plot(epochs, self.metrics['val']['auc_roc'], 
-                          color='purple', label='AUC-ROC')
-            axes[1, 1].plot(epochs, self.metrics['val']['f1_score'], 
-                          color='orange', label='F1-Score')
-            axes[1, 1].set_title('Validation Metrics')
-            axes[1, 1].set_xlabel('Epoch')
-            axes[1, 1].set_ylabel('Score')
-            axes[1, 1].legend()
-            axes[1, 1].grid(True)
-        
-        plt.tight_layout()
-        save_path = os.path.join(self.model_plot_dir, 'training_progress.png')
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        # Display in notebook if in Kaggle environment
-        if os.path.exists('/kaggle'):
-            display(Image(save_path))
+            plt.plot(epochs, self.metrics['val']['auc_roc'], 
+                    color='purple', label='AUC-ROC')
+            plt.plot(epochs, self.metrics['val']['f1_score'], 
+                    color='orange', label='F1-Score')
+            plt.title(f'Validation Metrics - {self.model_name}')
+            plt.xlabel('Epoch')
+            plt.ylabel('Score')
+            plt.legend()
+            plt.grid(True)
+            save_path = os.path.join(self.model_plot_dir, 'validation_metrics.png')
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.close()
     
     def plot_test_results(self):
-        """Plot test results (confusion matrix, ROC curve, prediction distribution)"""
+        """Plot test results separately"""
         if not self.metrics['test']['confusion_matrix'] is not None:
             print("No test metrics available")
             return
         
-        # Create a figure with 3 subplots
-        fig = plt.figure(figsize=(20, 6))
-        fig.suptitle(f'Test Results - {self.model_name}', fontsize=14)
-        
         # Confusion Matrix
-        plt.subplot(131)
+        plt.figure(figsize=(8, 6))
         sns.heatmap(self.metrics['test']['confusion_matrix'], 
                    annot=True, fmt='d', cmap='Blues')
-        plt.title('Confusion Matrix')
+        plt.title(f'Confusion Matrix - {self.model_name}')
         plt.ylabel('True Label')
         plt.xlabel('Predicted Label')
+        save_path = os.path.join(self.model_plot_dir, 'confusion_matrix.png')
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
         
         # ROC Curve
-        plt.subplot(132)
+        plt.figure(figsize=(8, 6))
         roc_data = self.metrics['test']['roc_data']
         plt.plot(roc_data['fpr'], roc_data['tpr'], 
                 color=self.colors['test'], 
@@ -207,25 +211,29 @@ class VisualizationManager:
         plt.ylim([0.0, 1.05])
         plt.xlabel('False Positive Rate')
         plt.ylabel('True Positive Rate')
-        plt.title('ROC Curve')
+        plt.title(f'ROC Curve - {self.model_name}')
         plt.legend(loc="lower right")
-        
-        # Prediction Distribution
-        plt.subplot(133)
-        predictions = self.metrics['test']['predictions']
-        sns.histplot(predictions['prob'], bins=50)
-        plt.title('Prediction Distribution')
-        plt.xlabel('Probability')
-        plt.ylabel('Count')
-        
-        plt.tight_layout()
-        save_path = os.path.join(self.model_plot_dir, 'test_results.png')
+        save_path = os.path.join(self.model_plot_dir, 'roc_curve.png')
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.close()
         
-        # Display in notebook if in Kaggle environment
-        if os.path.exists('/kaggle'):
-            display(Image(save_path))
+        # Prediction Distribution
+        plt.figure(figsize=(8, 6))
+        predictions = self.metrics['test']['predictions']
+        sns.histplot(predictions['prob'], bins=50)
+        plt.title(f'Prediction Distribution - {self.model_name}')
+        plt.xlabel('Probability')
+        plt.ylabel('Count')
+        save_path = os.path.join(self.model_plot_dir, 'prediction_distribution.png')
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
+    
+    def display_plots(self):
+        """Display all plots in the current model directory"""
+        print(f"\nDisplaying plots from: {self.model_plot_dir}")
+        for plot_path in sorted(glob.glob(os.path.join(self.model_plot_dir, '*.png'))):
+            print(f"Displaying: {os.path.basename(plot_path)}")
+            display(Image(filename=plot_path))
     
     def plot_all(self):
         """Plot all available visualizations based on mode"""
@@ -233,4 +241,8 @@ class VisualizationManager:
             self.plot_training_progress()
         elif self.mode == 'test':
             self.plot_test_results()
-        self.save_metrics() 
+        self.save_metrics()
+        
+        # Display plots if in Kaggle environment
+        if os.path.exists('/kaggle'):
+            self.display_plots() 

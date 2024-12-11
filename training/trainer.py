@@ -207,13 +207,21 @@ class Trainer:
         )
         
         # Update visualizer with existing metrics if resuming
-        if resume and checkpoint_dir:
+        if resume and checkpoint_dir and start_epoch > 0:
+            metrics = self.tracker.metrics
             for epoch in range(start_epoch):
-                if epoch < len(self.tracker.metrics['train']['epoch_loss']):
+                if epoch < len(metrics['train']['epoch_loss']):
                     self.visualizer.update_training_metrics(
-                        epoch_loss=self.tracker.metrics['train']['epoch_loss'][epoch],
-                        epoch_acc=self.tracker.metrics['train']['epoch_acc'][epoch]
+                        epoch_loss=metrics['train']['epoch_loss'][epoch],
+                        epoch_acc=metrics['train']['epoch_acc'][epoch]
                     )
+                    if 'val' in metrics and len(metrics['val']['loss']) > epoch:
+                        self.visualizer.update_validation_metrics(
+                            val_loss=metrics['val']['loss'][epoch],
+                            val_acc=metrics['val']['accuracy'][epoch],
+                            auc_roc=metrics['val']['auc_roc'][epoch],
+                            f1_score=metrics['val']['f1_score'][epoch]
+                        )
         
         for epoch in range(start_epoch, Config.NUM_EPOCHS):
             # Train

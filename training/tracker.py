@@ -188,7 +188,7 @@ class TrainingTracker:
             'model_name': self.model_name,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'metrics': metrics_json  # Use the JSON-serializable metrics
+            'metrics': metrics_json
         }
         
         # Save last checkpoint
@@ -198,8 +198,9 @@ class TrainingTracker:
         if is_best:
             torch.save(state, os.path.join(checkpoint_dir, 'best.pth'))
         
-        # Save metrics separately
-        with open(os.path.join(checkpoint_dir, 'metrics.json'), 'w') as f:
+        # Save metrics separately to ensure consistency
+        metrics_file = os.path.join(checkpoint_dir, 'metrics.json')
+        with open(metrics_file, 'w') as f:
             json.dump(metrics_json, f, indent=4)
     
     def load_checkpoint(self, model, optimizer, checkpoint_type='last'):
@@ -220,7 +221,14 @@ class TrainingTracker:
             try:
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                self.metrics = checkpoint['metrics']
+                
+                # Load metrics from metrics.json instead of checkpoint
+                metrics_file = os.path.join(self.checkpoint_dir, 'metrics.json')
+                if os.path.exists(metrics_file):
+                    with open(metrics_file, 'r') as f:
+                        self.metrics = json.load(f)
+                else:
+                    self.metrics = checkpoint['metrics']  # Fallback to checkpoint metrics
                 
                 # Load training state
                 if os.path.exists(self.training_state_file):

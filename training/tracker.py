@@ -3,6 +3,7 @@ import json
 import torch
 from tqdm import tqdm
 from config.config import Config
+import numpy as np
 
 class TrainingTracker:
     def __init__(self, model_name):
@@ -64,8 +65,8 @@ class TrainingTracker:
         self.epoch_pbar.update(1)
         
         # Calculate running averages if provided
-        avg_loss = f"{running_loss / (batch_idx + 1):.4f}" if running_loss is not None else "?"
-        avg_acc = f"{running_acc / (batch_idx + 1):.2f}" if running_acc is not None else "?"
+        avg_loss = f"{running_loss:.4f}" if running_loss is not None else "?"
+        avg_acc = f"{running_acc:.2f}" if running_acc is not None else "?"
         
         # Update metrics in progress bar
         self.epoch_pbar.set_postfix({
@@ -77,9 +78,9 @@ class TrainingTracker:
         }, refresh=True)
         
         # Store metrics
-        self.metrics['train']['batch_loss'].append(loss)
-        self.metrics['train']['batch_acc'].append(acc)
-        self.metrics['train']['learning_rates'].append(lr)
+        self.metrics['train']['batch_loss'].append(float(loss))
+        self.metrics['train']['batch_acc'].append(float(acc))
+        self.metrics['train']['learning_rates'].append(float(lr))
     
     def init_validation(self, num_batches):
         """Initialize validation progress bars"""
@@ -120,12 +121,14 @@ class TrainingTracker:
     
     def update_epoch(self, epoch_loss, epoch_acc):
         """Update epoch metrics"""
-        self.metrics['train']['epoch_loss'].append(epoch_loss)
-        self.metrics['train']['epoch_acc'].append(epoch_acc)
+        # Convert to float to ensure JSON serialization
+        self.metrics['train']['epoch_loss'].append(float(epoch_loss))
+        self.metrics['train']['epoch_acc'].append(float(epoch_acc))
         
         # Close progress bars
         if self.epoch_pbar is not None:
             self.epoch_pbar.close()
+            self.epoch_pbar = None  # Clear the reference
     
     def close_validation(self):
         """Close validation progress bars"""
@@ -137,12 +140,25 @@ class TrainingTracker:
         checkpoint_dir = os.path.join(Config.CHECKPOINT_DIR, self.model_name)
         os.makedirs(checkpoint_dir, exist_ok=True)
         
+        # Convert all numpy arrays and tensors to regular Python types for JSON serialization
+        metrics_json = {}
+        for key, value in self.metrics.items():
+            if isinstance(value, dict):
+                metrics_json[key] = {}
+                for k, v in value.items():
+                    if isinstance(v, (list, np.ndarray)):
+                        metrics_json[key][k] = [float(x) if isinstance(x, (np.number, torch.Tensor)) else x for x in v]
+                    else:
+                        metrics_json[key][k] = float(v) if isinstance(v, (np.number, torch.Tensor)) else v
+            else:
+                metrics_json[key] = float(value) if isinstance(value, (np.number, torch.Tensor)) else value
+        
         state = {
             'epoch': epoch,
             'model_name': self.model_name,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'metrics': self.metrics
+            'metrics': metrics_json  # Use the JSON-serializable metrics
         }
         
         # Save last checkpoint
@@ -151,10 +167,10 @@ class TrainingTracker:
         # Save best if needed
         if is_best:
             torch.save(state, os.path.join(checkpoint_dir, 'best.pth'))
-            
-        # Save metrics
+        
+        # Save metrics separately
         with open(os.path.join(checkpoint_dir, 'metrics.json'), 'w') as f:
-            json.dump(self.metrics, f, indent=4)
+            json.dump(metrics_json, f, indent=4)
     
     def load_checkpoint(self, model, optimizer, checkpoint_type='last'):
         """Load model checkpoint"""

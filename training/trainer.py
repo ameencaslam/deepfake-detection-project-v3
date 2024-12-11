@@ -186,8 +186,8 @@ class Trainer:
                 self.model,
                 self.optimizer
             )
-            if start_epoch >= Config.NUM_EPOCHS - 1:
-                print(f"\nTraining already completed ({start_epoch + 1} epochs). Starting fresh.")
+            if start_epoch >= Config.NUM_EPOCHS:
+                print(f"\nTraining already completed ({start_epoch} epochs). Starting fresh.")
                 start_epoch = 0
                 checkpoint_dir = None
         
@@ -197,6 +197,15 @@ class Trainer:
             mode='train',
             resume_from=checkpoint_dir
         )
+        
+        # Update visualizer with existing metrics if resuming
+        if resume and checkpoint_dir:
+            for epoch in range(start_epoch):
+                if epoch < len(self.tracker.metrics['train']['epoch_loss']):
+                    self.visualizer.update_training_metrics(
+                        epoch_loss=self.tracker.metrics['train']['epoch_loss'][epoch],
+                        epoch_acc=self.tracker.metrics['train']['epoch_acc'][epoch]
+                    )
         
         for epoch in range(start_epoch, Config.NUM_EPOCHS):
             # Train

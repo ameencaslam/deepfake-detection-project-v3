@@ -2,17 +2,11 @@ import torch
 from config.config import Config
 from .metrics import MetricsCalculator
 from .tracker import TrainingTracker
-from utils.visualization import VisualizationUtils
+from utils.visualization import VisualizationManager
 import numpy as np
 import os
 import sys
 import shutil
-import matplotlib.pyplot as plt
-
-# Set matplotlib backend for Jupyter compatibility
-import matplotlib
-if 'ipykernel' in sys.modules:
-    matplotlib.use('Agg')
 
 class Trainer:
     def __init__(self, model, train_loader, val_loader, test_loader, device):
@@ -32,10 +26,9 @@ class Trainer:
         # Initialize tracker and metrics
         self.tracker = TrainingTracker(model.model_name)
         self.metrics_calculator = MetricsCalculator()
-        self.visualizer = VisualizationUtils()
         
-        # Create directories for plots
-        os.makedirs('plots', exist_ok=True)
+        # Initialize visualization manager
+        self.visualizer = None  # Will be initialized in train() or test()
     
     def train_epoch(self, epoch):
         """Train for one epoch"""
@@ -65,8 +58,8 @@ class Trainer:
             # Update running metrics
             batch_size = data.size(0)
             num_samples += batch_size
-            running_loss += loss.item() * batch_size  # Weight loss by batch size
-            running_acc += acc * batch_size  # Weight accuracy by batch size
+            running_loss += loss.item() * batch_size
+            running_acc += acc * batch_size
             
             # Calculate current averages
             current_avg_loss = running_loss / num_samples
@@ -81,11 +74,22 @@ class Trainer:
                 current_avg_loss,
                 current_avg_acc
             )
+            
+            # Update visualization learning rate
+            if self.visualizer:
+                self.visualizer.update_training_metrics(learning_rate=self.optimizer.param_groups[0]['lr'])
         
         # Calculate final epoch metrics
         epoch_loss = running_loss / num_samples
         epoch_acc = running_acc / num_samples
         self.tracker.update_epoch(epoch_loss, epoch_acc)
+        
+        # Update visualization metrics
+        if self.visualizer:
+            self.visualizer.update_training_metrics(
+                epoch_loss=epoch_loss,
+                epoch_acc=epoch_acc
+            )
         
         return epoch_loss, epoch_acc
     
@@ -98,7 +102,6 @@ class Trainer:
         all_outputs = []
         all_targets = []
         
-        # Initialize validation progress bars
         self.tracker.init_validation(len(loader))
         
         with torch.no_grad():
@@ -106,24 +109,19 @@ class Trainer:
                 data = data.to(self.device)
                 target = target.to(self.device)
                 
-                # Forward pass
                 output = self.model(data)
                 loss = self.criterion(output.squeeze(), target.float())
                 
-                # Calculate batch accuracy
                 acc = self.metrics_calculator.calculate_accuracy(output.squeeze(), target)
                 
-                # Update running metrics
                 batch_size = data.size(0)
                 num_samples += batch_size
-                running_loss += loss.item() * batch_size  # Weight loss by batch size
-                running_acc += acc * batch_size  # Weight accuracy by batch size
+                running_loss += loss.item() * batch_size
+                running_acc += acc * batch_size
                 
-                # Calculate current averages
                 current_avg_loss = running_loss / num_samples
                 current_avg_acc = running_acc / num_samples
                 
-                # Update progress bars with batch metrics
                 self.tracker.update_validation_batch(
                     batch_idx,
                     loss.item(),
@@ -132,11 +130,9 @@ class Trainer:
                     current_avg_acc
                 )
                 
-                # Store predictions and targets for final metrics
                 all_outputs.append(output.squeeze())
                 all_targets.append(target)
         
-        # Close validation progress bars
         self.tracker.close_validation()
         
         # Calculate final metrics
@@ -149,12 +145,14 @@ class Trainer:
         metrics['loss'] = val_loss
         metrics['accuracy'] = val_acc
         
-        # Store validation metrics
-        self.tracker.metrics['val']['loss'].append(val_loss)
-        self.tracker.metrics['val']['accuracy'].append(metrics['accuracy'])
-        self.tracker.metrics['val']['auc_roc'].append(metrics['auc_roc'])
-        self.tracker.metrics['val']['f1_score'].append(metrics['f1_score'])
-        self.tracker.metrics['val']['confusion_matrix'].append(metrics['confusion_matrix'])
+        # Update visualization metrics
+        if self.visualizer:
+            self.visualizer.update_validation_metrics(
+                val_loss=val_loss,
+                val_acc=val_acc,
+                auc_roc=metrics['auc_roc'],
+                f1_score=metrics['f1_score']
+            )
         
         return metrics
     
@@ -181,18 +179,25 @@ class Trainer:
     def train(self, resume=False):
         """Full training loop"""
         start_epoch = 0
+        checkpoint_dir = None
+        
         if resume:
+            checkpoint_dir = self.tracker.get_checkpoint_dir()
             start_epoch = self.tracker.load_checkpoint(
                 self.model,
                 self.optimizer
             )
-            # Adjust start_epoch to prevent skipping epochs
             if start_epoch >= Config.NUM_EPOCHS - 1:
                 print(f"\nTraining already completed ({start_epoch + 1} epochs). Starting fresh.")
                 start_epoch = 0
+                checkpoint_dir = None
         
-        # Create plots directory
-        os.makedirs('plots', exist_ok=True)
+        # Initialize visualization manager for training
+        self.visualizer = VisualizationManager(
+            model_name=self.model.model_name,
+            mode='train',
+            resume_from=checkpoint_dir
+        )
         
         for epoch in range(start_epoch, Config.NUM_EPOCHS):
             # Train
@@ -207,7 +212,7 @@ class Trainer:
             print(f"Val Loss: {val_metrics['loss']:.4f}, Val Acc: {val_metrics['accuracy']:.2f}%")
             print(f"Val AUC-ROC: {val_metrics['auc_roc']:.4f}, Val F1: {val_metrics['f1_score']:.4f}")
             
-            # Save checkpoint - using validation loss as criterion
+            # Save checkpoint
             is_best = val_metrics['loss'] < self.tracker.metrics['best_metrics']['val_loss']
             if is_best:
                 self.tracker.metrics['best_metrics'].update({
@@ -224,25 +229,21 @@ class Trainer:
                 is_best
             )
             
-            # Plot and save training progress
-            fig = self.visualizer.plot_training_history(self.tracker.metrics)
-            plt.savefig(os.path.join('plots', 'training_history.png'), bbox_inches='tight', dpi=300)
-            plt.close(fig)
-            
-            # Display plot in notebook if in notebook environment
-            if 'ipykernel' in sys.modules:
-                try:
-                    from IPython.display import display, Image
-                    display(Image('plots/training_history.png'))
-                except ImportError:
-                    pass
+            # Update and save plots
+            self.visualizer.plot_all()
         
         # Save checkpoints to zip at the end of training
         self.tracker.save_to_zip()
-        print("\nTraining plots saved to: plots/training_history.png")
+        print(f"\nTraining plots saved to: {self.visualizer.model_plot_dir}")
     
     def test(self):
         """Test the model"""
+        # Initialize visualization manager for testing
+        self.visualizer = VisualizationManager(
+            model_name=self.model.model_name,
+            mode='test'
+        )
+        
         # Load best model
         self.tracker.load_checkpoint(
             self.model,
@@ -250,47 +251,25 @@ class Trainer:
             'best'
         )
         
-        # Create plots directory
-        os.makedirs('plots', exist_ok=True)
-        
-        # Get predictions and metrics
+        # Get predictions
         test_preds, test_probs, test_targets = self.get_predictions(self.test_loader)
-        test_metrics = self.validate(self.test_loader)
         
-        # Print results
-        print("\nTest Results:")
-        print(f"Test Loss: {test_metrics['loss']:.4f}")
-        print(f"Test Accuracy: {test_metrics['accuracy']:.2f}%")
-        print(f"Test AUC-ROC: {test_metrics['auc_roc']:.4f}")
-        print(f"Test F1-Score: {test_metrics['f1_score']:.4f}")
+        # Update visualization with test metrics
+        self.visualizer.update_test_metrics(
+            y_true=test_targets,
+            y_pred=test_preds,
+            y_prob=test_probs
+        )
         
-        # Create and save test plots
-        plots = {
-            'confusion_matrix': self.visualizer.plot_confusion_matrix(test_targets, test_preds),
-            'roc_curve': self.visualizer.plot_roc_curve(test_targets, test_probs),
-            'pred_dist': self.visualizer.plot_prediction_distribution(test_probs),
-            'metrics_summary': self.visualizer.plot_metrics_summary(test_metrics)
-        }
+        # Generate and save test plots
+        self.visualizer.plot_all()
         
-        # Save and display all plots
-        if 'ipykernel' in sys.modules:
-            try:
-                from IPython.display import display, Image
-                for name, fig in plots.items():
-                    plt.figure(fig.number)
-                    save_path = os.path.join('plots', f'test_{name}.png')
-                    plt.savefig(save_path, bbox_inches='tight', dpi=300)
-                    display(Image(save_path))
-                    plt.close(fig)
-            except ImportError:
-                pass
-        else:
-            for name, fig in plots.items():
-                plt.figure(fig.number)
-                plt.savefig(os.path.join('plots', f'test_{name}.png'), bbox_inches='tight', dpi=300)
-                plt.close(fig)
+        print(f"\nTest plots saved to: {self.visualizer.model_plot_dir}")
         
-        # Save checkpoints to zip after testing
-        self.tracker.save_to_zip()
-        print("\nTest plots saved to plots directory:")
-        print("\n".join(f"- plots/test_{name}.png" for name in plots.keys())) 
+        # Return test metrics
+        return {
+            'accuracy': (test_preds == test_targets).mean(),
+            'predictions': test_preds,
+            'probabilities': test_probs,
+            'targets': test_targets
+        } 

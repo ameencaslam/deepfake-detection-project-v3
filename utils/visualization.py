@@ -1,119 +1,236 @@
 import os
+import json
+from datetime import datetime
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Set backend before importing pyplot
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, roc_curve, auc
+from IPython.display import display, Image
 from config.config import Config
 
-class VisualizationUtils:
-    def __init__(self):
-        plt.style.use('seaborn')
-    
-    def save_plots(self, save_dir):
-        """Save all current plots to directory"""
-        plt.close('all')  # Close any existing plots
+class VisualizationManager:
+    def __init__(self, model_name, mode='train', resume_from=None):
+        """
+        Initialize visualization manager
+        Args:
+            model_name: Name of the model being trained/tested
+            mode: 'train' or 'test'
+            resume_from: Path to previous training checkpoint (if resuming)
+        """
+        self.model_name = model_name
+        self.mode = mode
+        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # Save current figure
-        if plt.get_fignums():
-            for i, fig in enumerate(plt.get_fignums()):
-                plt.figure(fig)
-                plt.savefig(os.path.join(save_dir, f'plot_{i}.png'))
-                plt.close(fig)
+        # Create model-specific plot directory
+        self.base_plot_dir = os.path.join(Config.LOG_DIR, 'plots')
+        self.model_plot_dir = os.path.join(self.base_plot_dir, f'{model_name}_{self.timestamp}')
+        os.makedirs(self.model_plot_dir, exist_ok=True)
+        
+        # Initialize metrics storage
+        self.metrics = {
+            'train': {
+                'epoch_loss': [],
+                'epoch_acc': [],
+                'learning_rates': []
+            },
+            'val': {
+                'loss': [],
+                'accuracy': [],
+                'auc_roc': [],
+                'f1_score': []
+            },
+            'test': {
+                'confusion_matrix': None,
+                'roc_data': None,
+                'predictions': None
+            }
+        }
+        
+        # Load previous metrics if resuming
+        if resume_from and os.path.exists(resume_from):
+            self._load_previous_metrics(resume_from)
+            
+        # Set style
+        plt.style.use('seaborn')
+        self.colors = {
+            'train': '#2ecc71',
+            'val': '#e74c3c',
+            'test': '#3498db'
+        }
     
-    def plot_training_history(self, metrics):
-        """Plot training history"""
-        # Create figure with subplots
+    def _load_previous_metrics(self, checkpoint_dir):
+        """Load metrics from previous training"""
+        metrics_file = os.path.join(checkpoint_dir, 'metrics.json')
+        if os.path.exists(metrics_file):
+            try:
+                with open(metrics_file, 'r') as f:
+                    prev_metrics = json.load(f)
+                # Merge previous metrics with current
+                for key in ['train', 'val']:
+                    if key in prev_metrics:
+                        for metric in prev_metrics[key]:
+                            if metric in self.metrics[key]:
+                                self.metrics[key][metric].extend(prev_metrics[key][metric])
+                print(f"Loaded previous metrics from {metrics_file}")
+            except Exception as e:
+                print(f"Error loading previous metrics: {str(e)}")
+    
+    def save_metrics(self):
+        """Save current metrics to JSON"""
+        metrics_file = os.path.join(self.model_plot_dir, 'metrics.json')
+        try:
+            with open(metrics_file, 'w') as f:
+                json.dump(self.metrics, f)
+        except Exception as e:
+            print(f"Error saving metrics: {str(e)}")
+    
+    def update_training_metrics(self, epoch_loss=None, epoch_acc=None, learning_rate=None):
+        """Update training metrics"""
+        if epoch_loss is not None:
+            self.metrics['train']['epoch_loss'].append(epoch_loss)
+        if epoch_acc is not None:
+            self.metrics['train']['epoch_acc'].append(epoch_acc)
+        if learning_rate is not None:
+            self.metrics['train']['learning_rates'].append(learning_rate)
+    
+    def update_validation_metrics(self, val_loss=None, val_acc=None, auc_roc=None, f1_score=None):
+        """Update validation metrics"""
+        if val_loss is not None:
+            self.metrics['val']['loss'].append(val_loss)
+        if val_acc is not None:
+            self.metrics['val']['accuracy'].append(val_acc)
+        if auc_roc is not None:
+            self.metrics['val']['auc_roc'].append(auc_roc)
+        if f1_score is not None:
+            self.metrics['val']['f1_score'].append(f1_score)
+    
+    def update_test_metrics(self, y_true, y_pred, y_prob):
+        """Update test metrics"""
+        self.metrics['test']['confusion_matrix'] = confusion_matrix(y_true, y_pred)
+        fpr, tpr, _ = roc_curve(y_true, y_prob)
+        self.metrics['test']['roc_data'] = {'fpr': fpr.tolist(), 'tpr': tpr.tolist(), 
+                                          'auc': auc(fpr, tpr)}
+        self.metrics['test']['predictions'] = {'true': y_true.tolist(), 
+                                             'pred': y_pred.tolist(), 
+                                             'prob': y_prob.tolist()}
+    
+    def plot_training_progress(self):
+        """Plot training progress (loss, accuracy, learning rate)"""
         fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        fig.suptitle(f'Training Progress - {self.model_name}', fontsize=14)
         
         # Plot loss
-        axes[0, 0].plot(metrics['train']['epoch_loss'], label='Train Loss')
-        if metrics['val']['loss']:
-            axes[0, 0].plot(metrics['val']['loss'], label='Val Loss')
-        axes[0, 0].set_title('Loss History')
-        axes[0, 0].set_xlabel('Epoch')
-        axes[0, 0].set_ylabel('Loss')
-        axes[0, 0].legend()
+        if self.metrics['train']['epoch_loss']:
+            axes[0, 0].plot(self.metrics['train']['epoch_loss'], 
+                          color=self.colors['train'], label='Train Loss')
+            if self.metrics['val']['loss']:
+                axes[0, 0].plot(self.metrics['val']['loss'], 
+                              color=self.colors['val'], label='Val Loss')
+            axes[0, 0].set_title('Loss History')
+            axes[0, 0].set_xlabel('Epoch')
+            axes[0, 0].set_ylabel('Loss')
+            axes[0, 0].legend()
+            axes[0, 0].grid(True)
         
         # Plot accuracy
-        axes[0, 1].plot(metrics['train']['epoch_acc'], label='Train Acc')
-        if metrics['val']['accuracy']:
-            axes[0, 1].plot(metrics['val']['accuracy'], label='Val Acc')
-        axes[0, 1].set_title('Accuracy History')
-        axes[0, 1].set_xlabel('Epoch')
-        axes[0, 1].set_ylabel('Accuracy (%)')
-        axes[0, 1].legend()
+        if self.metrics['train']['epoch_acc']:
+            axes[0, 1].plot(self.metrics['train']['epoch_acc'], 
+                          color=self.colors['train'], label='Train Acc')
+            if self.metrics['val']['accuracy']:
+                axes[0, 1].plot(self.metrics['val']['accuracy'], 
+                              color=self.colors['val'], label='Val Acc')
+            axes[0, 1].set_title('Accuracy History')
+            axes[0, 1].set_xlabel('Epoch')
+            axes[0, 1].set_ylabel('Accuracy')
+            axes[0, 1].legend()
+            axes[0, 1].grid(True)
         
         # Plot learning rate
-        if metrics['train']['learning_rates']:
-            axes[1, 0].plot(metrics['train']['learning_rates'])
+        if self.metrics['train']['learning_rates']:
+            axes[1, 0].plot(self.metrics['train']['learning_rates'], 
+                          color=self.colors['train'])
             axes[1, 0].set_title('Learning Rate')
-            axes[1, 0].set_xlabel('Batch')
+            axes[1, 0].set_xlabel('Iteration')
             axes[1, 0].set_ylabel('Learning Rate')
+            axes[1, 0].grid(True)
         
         # Plot validation metrics
-        if metrics['val']['auc_roc']:
-            epochs = range(len(metrics['val']['auc_roc']))
-            axes[1, 1].plot(epochs, metrics['val']['auc_roc'], label='AUC-ROC')
-            axes[1, 1].plot(epochs, metrics['val']['f1_score'], label='F1-Score')
+        if self.metrics['val']['auc_roc'] and self.metrics['val']['f1_score']:
+            epochs = range(len(self.metrics['val']['auc_roc']))
+            axes[1, 1].plot(epochs, self.metrics['val']['auc_roc'], 
+                          color='purple', label='AUC-ROC')
+            axes[1, 1].plot(epochs, self.metrics['val']['f1_score'], 
+                          color='orange', label='F1-Score')
             axes[1, 1].set_title('Validation Metrics')
             axes[1, 1].set_xlabel('Epoch')
             axes[1, 1].set_ylabel('Score')
             axes[1, 1].legend()
+            axes[1, 1].grid(True)
         
         plt.tight_layout()
-        return fig
+        save_path = os.path.join(self.model_plot_dir, 'training_progress.png')
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        # Display in notebook if in Kaggle environment
+        if os.path.exists('/kaggle'):
+            display(Image(save_path))
     
-    def plot_confusion_matrix(self, y_true, y_pred):
-        """Plot confusion matrix"""
-        cm = confusion_matrix(y_true, y_pred)
-        plt.figure(figsize=(8, 6))
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+    def plot_test_results(self):
+        """Plot test results (confusion matrix, ROC curve, prediction distribution)"""
+        if not self.metrics['test']['confusion_matrix'] is not None:
+            print("No test metrics available")
+            return
+        
+        # Create a figure with 3 subplots
+        fig = plt.figure(figsize=(20, 6))
+        fig.suptitle(f'Test Results - {self.model_name}', fontsize=14)
+        
+        # Confusion Matrix
+        plt.subplot(131)
+        sns.heatmap(self.metrics['test']['confusion_matrix'], 
+                   annot=True, fmt='d', cmap='Blues')
         plt.title('Confusion Matrix')
         plt.ylabel('True Label')
         plt.xlabel('Predicted Label')
-        return plt.gcf()
-    
-    def plot_roc_curve(self, y_true, y_prob):
-        """Plot ROC curve"""
-        fpr, tpr, _ = roc_curve(y_true, y_prob)
-        roc_auc = auc(fpr, tpr)
         
-        plt.figure(figsize=(8, 6))
-        plt.plot(fpr, tpr, color='darkorange', lw=2, 
-                label=f'ROC curve (AUC = {roc_auc:.2f})')
-        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        # ROC Curve
+        plt.subplot(132)
+        roc_data = self.metrics['test']['roc_data']
+        plt.plot(roc_data['fpr'], roc_data['tpr'], 
+                color=self.colors['test'], 
+                label=f'ROC curve (AUC = {roc_data["auc"]:.3f})')
+        plt.plot([0, 1], [0, 1], 'k--')
         plt.xlim([0.0, 1.0])
         plt.ylim([0.0, 1.05])
         plt.xlabel('False Positive Rate')
         plt.ylabel('True Positive Rate')
-        plt.title('Receiver Operating Characteristic (ROC) Curve')
+        plt.title('ROC Curve')
         plt.legend(loc="lower right")
-        return plt.gcf()
-    
-    def plot_prediction_distribution(self, probabilities):
-        """Plot prediction probability distribution"""
-        plt.figure(figsize=(8, 6))
-        sns.histplot(probabilities, bins=50)
-        plt.title('Prediction Probability Distribution')
+        
+        # Prediction Distribution
+        plt.subplot(133)
+        predictions = self.metrics['test']['predictions']
+        sns.histplot(predictions['prob'], bins=50)
+        plt.title('Prediction Distribution')
         plt.xlabel('Probability')
         plt.ylabel('Count')
-        return plt.gcf()
+        
+        plt.tight_layout()
+        save_path = os.path.join(self.model_plot_dir, 'test_results.png')
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        # Display in notebook if in Kaggle environment
+        if os.path.exists('/kaggle'):
+            display(Image(save_path))
     
-    def plot_metrics_summary(self, metrics):
-        """Plot summary of metrics"""
-        plt.figure(figsize=(10, 6))
-        metrics_to_plot = {
-            'Accuracy': metrics['accuracy'],
-            'AUC-ROC': metrics['auc_roc'],
-            'F1-Score': metrics['f1_score']
-        }
-        
-        plt.bar(metrics_to_plot.keys(), metrics_to_plot.values())
-        plt.title('Metrics Summary')
-        plt.ylim([0, 100])
-        
-        # Add value labels on top of bars
-        for i, (metric, value) in enumerate(metrics_to_plot.items()):
-            plt.text(i, value + 1, f'{value:.2f}', ha='center')
-        
-        return plt.gcf() 
+    def plot_all(self):
+        """Plot all available visualizations based on mode"""
+        if self.mode == 'train':
+            self.plot_training_progress()
+        elif self.mode == 'test':
+            self.plot_test_results()
+        self.save_metrics() 

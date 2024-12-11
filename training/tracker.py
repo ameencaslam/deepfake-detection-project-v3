@@ -238,8 +238,8 @@ class TrainingTracker:
             self.training_state['best_val_loss'] = epoch_loss
             self.training_state['best_epoch'] = self.training_state['completed_epochs']
         
-        # Log metrics to MLflow
-        with mlflow.start_run(run_id=mlflow.active_run().info.run_id):
+        # Log metrics to MLflow - using existing run
+        if mlflow.active_run():
             mlflow.log_metrics({
                 'epoch_loss': epoch_loss,
                 'epoch_accuracy': epoch_acc,

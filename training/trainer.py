@@ -6,6 +6,9 @@ from utils.visualization import VisualizationManager
 import numpy as np
 import os
 import sys
+import mlflow
+import mlflow.pytorch
+from config.mlflow_config import MLflowConfig
 
 class Trainer:
     def __init__(self, model, train_loader, val_loader, test_loader, device):
@@ -28,6 +31,11 @@ class Trainer:
         
         # Initialize visualization manager
         self.visualizer = None  # Will be initialized in train() or test()
+        
+        # Setup MLflow
+        MLflowConfig.setup_mlflow()
+        self.experiment_name = MLflowConfig.get_experiment_name(model.model_name)
+        mlflow.set_experiment(self.experiment_name)
     
     def train_epoch(self, epoch):
         """Train for one epoch"""
@@ -177,86 +185,120 @@ class Trainer:
     
     def train(self, resume=False):
         """Full training loop"""
-        start_epoch = 0
-        checkpoint_dir = None
-        
-        if resume:
-            checkpoint_dir = self.tracker.get_checkpoint_dir()
-            start_epoch = self.tracker.load_checkpoint(
-                self.model,
-                self.optimizer
-            )
+        with mlflow.start_run(run_name=f"train_{self.model.model_name}"):
+            # Log model parameters
+            mlflow.log_params({
+                "model_name": self.model.model_name,
+                "batch_size": Config.BATCH_SIZE,
+                "num_epochs": Config.NUM_EPOCHS,
+                "learning_rate": Config.LEARNING_RATE,
+                "weight_decay": Config.WEIGHT_DECAY
+            })
             
-            # Check if we've completed all epochs
-            if start_epoch >= Config.NUM_EPOCHS:
-                print(f"\nTraining already completed ({start_epoch}/{Config.NUM_EPOCHS} epochs). Starting fresh.")
-                self.tracker.reset_training()
-                start_epoch = 0
-                checkpoint_dir = None
-            else:
-                print(f"\nResuming training from epoch {start_epoch + 1}/{Config.NUM_EPOCHS}")
-        else:
-            print("\nStarting fresh training...")
-            self.tracker.reset_training()
-        
-        # Initialize visualization manager for training
-        self.visualizer = VisualizationManager(
-            model_name=self.model.model_name,
-            mode='train',
-            resume_from=checkpoint_dir
-        )
-        
-        # Update visualizer with existing metrics if resuming
-        if resume and checkpoint_dir and start_epoch > 0:
-            metrics = self.tracker.metrics
-            for epoch in range(start_epoch):
-                if epoch < len(metrics['train']['epoch_loss']):
-                    self.visualizer.update_training_metrics(
-                        epoch_loss=metrics['train']['epoch_loss'][epoch],
-                        epoch_acc=metrics['train']['epoch_acc'][epoch]
-                    )
-                    if 'val' in metrics and len(metrics['val']['loss']) > epoch:
-                        self.visualizer.update_validation_metrics(
-                            val_loss=metrics['val']['loss'][epoch],
-                            val_acc=metrics['val']['accuracy'][epoch],
-                            auc_roc=metrics['val']['auc_roc'][epoch],
-                            f1_score=metrics['val']['f1_score'][epoch]
-                        )
-        
-        for epoch in range(start_epoch, Config.NUM_EPOCHS):
-            # Train
-            train_loss, train_acc = self.train_epoch(epoch)
-            
-            # Validate
-            val_metrics = self.validate(self.val_loader)
-            
-            # Print metrics
-            print(f"\nEpoch {epoch+1}/{Config.NUM_EPOCHS}")
-            print(f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%")
-            print(f"Val Loss: {val_metrics['loss']:.4f}, Val Acc: {val_metrics['accuracy']:.2f}%")
-            print(f"Val AUC-ROC: {val_metrics['auc_roc']:.4f}, Val F1: {val_metrics['f1_score']:.4f}")
-            
-            # Save checkpoint
-            is_best = val_metrics['loss'] < self.tracker.metrics['best_metrics']['val_loss']
-            if is_best:
-                self.tracker.metrics['best_metrics'].update({
-                    'epoch': epoch,
-                    'val_acc': val_metrics['accuracy'],
-                    'val_loss': val_metrics['loss']
+            # Add model-specific config
+            if hasattr(self.model, 'config'):
+                mlflow.log_params({
+                    f"model_{k}": v for k, v in self.model.config.items()
                 })
-                print(f"New best model! Val Loss: {val_metrics['loss']:.4f}")
             
-            self.tracker.save_checkpoint(
-                self.model,
-                self.optimizer,
-                epoch,
-                is_best
+            start_epoch = 0
+            checkpoint_dir = None
+            
+            if resume:
+                checkpoint_dir = self.tracker.get_checkpoint_dir()
+                start_epoch = self.tracker.load_checkpoint(
+                    self.model,
+                    self.optimizer
+                )
+                
+                # Check if we've completed all epochs
+                if start_epoch >= Config.NUM_EPOCHS:
+                    print(f"\nTraining already completed ({start_epoch}/{Config.NUM_EPOCHS} epochs). Starting fresh.")
+                    self.tracker.reset_training()
+                    start_epoch = 0
+                    checkpoint_dir = None
+                else:
+                    print(f"\nResuming training from epoch {start_epoch + 1}/{Config.NUM_EPOCHS}")
+            else:
+                print("\nStarting fresh training...")
+                self.tracker.reset_training()
+            
+            # Initialize visualization manager for training
+            self.visualizer = VisualizationManager(
+                model_name=self.model.model_name,
+                mode='train',
+                resume_from=checkpoint_dir
             )
             
-            # Update and save plots
-            self.visualizer.plot_all()
-        
-        print(f"\nTraining plots saved to: {self.visualizer.model_plot_dir}")
+            # Update visualizer with existing metrics if resuming
+            if resume and checkpoint_dir and start_epoch > 0:
+                metrics = self.tracker.metrics
+                for epoch in range(start_epoch):
+                    if epoch < len(metrics['train']['epoch_loss']):
+                        self.visualizer.update_training_metrics(
+                            epoch_loss=metrics['train']['epoch_loss'][epoch],
+                            epoch_acc=metrics['train']['epoch_acc'][epoch]
+                        )
+                        if 'val' in metrics and len(metrics['val']['loss']) > epoch:
+                            self.visualizer.update_validation_metrics(
+                                val_loss=metrics['val']['loss'][epoch],
+                                val_acc=metrics['val']['accuracy'][epoch],
+                                auc_roc=metrics['val']['auc_roc'][epoch],
+                                f1_score=metrics['val']['f1_score'][epoch]
+                            )
+            
+            for epoch in range(start_epoch, Config.NUM_EPOCHS):
+                # Train
+                train_loss, train_acc = self.train_epoch(epoch)
+                
+                # Validate
+                val_metrics = self.validate(self.val_loader)
+                
+                # Log metrics
+                mlflow.log_metrics({
+                    "train_loss": train_loss,
+                    "train_accuracy": train_acc,
+                    "val_loss": val_metrics['loss'],
+                    "val_accuracy": val_metrics['accuracy'],
+                    "val_auc_roc": val_metrics['auc_roc'],
+                    "val_f1": val_metrics['f1_score']
+                }, step=epoch)
+                
+                # Log model checkpoint
+                is_best = val_metrics['loss'] < self.tracker.metrics['best_metrics']['val_loss']
+                if is_best:
+                    mlflow.pytorch.log_model(
+                        self.model,
+                        "model_best",
+                        registered_model_name=self.model.model_name
+                    )
+                
+                # Print metrics
+                print(f"\nEpoch {epoch+1}/{Config.NUM_EPOCHS}")
+                print(f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%")
+                print(f"Val Loss: {val_metrics['loss']:.4f}, Val Acc: {val_metrics['accuracy']:.2f}%")
+                print(f"Val AUC-ROC: {val_metrics['auc_roc']:.4f}, Val F1: {val_metrics['f1_score']:.4f}")
+                
+                # Save checkpoint
+                if is_best:
+                    self.tracker.metrics['best_metrics'].update({
+                        'epoch': epoch,
+                        'val_acc': val_metrics['accuracy'],
+                        'val_loss': val_metrics['loss']
+                    })
+                    print(f"New best model! Val Loss: {val_metrics['loss']:.4f}")
+                
+                self.tracker.save_checkpoint(
+                    self.model,
+                    self.optimizer,
+                    epoch,
+                    is_best
+                )
+                
+                # Update and save plots
+                self.visualizer.plot_all()
+            
+            print(f"\nTraining plots saved to: {self.visualizer.model_plot_dir}")
     
     def test(self):
         """Test the model"""

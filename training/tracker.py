@@ -4,6 +4,9 @@ import torch
 from tqdm import tqdm
 from config.config import Config
 import numpy as np
+import mlflow
+import mlflow.pytorch
+from config.mlflow_config import MLflowConfig
 
 class TrainingTracker:
     def __init__(self, model_name):
@@ -11,8 +14,16 @@ class TrainingTracker:
         self.checkpoint_dir = os.path.join(Config.CHECKPOINT_DIR, self.model_name)
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         
-        # Initialize or load training state
-        self.training_state_file = os.path.join(self.checkpoint_dir, 'training_state.json')
+        # Initialize MLflow tracking
+        self.experiment_name = MLflowConfig.get_experiment_name(model_name)
+        mlflow.set_experiment(self.experiment_name)
+        
+        # Get or create run
+        self.run = mlflow.active_run()
+        if not self.run:
+            self.run = mlflow.start_run()
+        
+        # Load or initialize training state
         self.training_state = self._load_training_state()
         
         self.metrics = {
@@ -43,22 +54,94 @@ class TrainingTracker:
     
     def _load_training_state(self):
         """Load or initialize training state"""
-        if os.path.exists(self.training_state_file):
-            with open(self.training_state_file, 'r') as f:
-                state = json.load(f)
-                # Update total_epochs if it changed but keep completed_epochs
-                state['total_epochs'] = Config.NUM_EPOCHS
-                return state
+        if mlflow.active_run():
+            # Try to load state from MLflow
+            try:
+                state = mlflow.get_run(mlflow.active_run().info.run_id).data.params.get('training_state')
+                if state:
+                    return json.loads(state)
+            except:
+                pass
+        
+        # Default state
         return {
             'completed_epochs': 0,
             'total_epochs': Config.NUM_EPOCHS,
             'best_val_loss': float('inf')
         }
-
-    def _save_training_state(self):
-        """Save training state"""
-        with open(self.training_state_file, 'w') as f:
-            json.dump(self.training_state, f, indent=4)
+    
+    def save_checkpoint(self, model, optimizer, epoch, is_best=False):
+        """Save model checkpoint and log to MLflow"""
+        # Save local checkpoint
+        checkpoint = {
+            'epoch': epoch,
+            'model_name': self.model_name,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+        }
+        
+        # Save checkpoint locally
+        torch.save(checkpoint, os.path.join(self.checkpoint_dir, 'last.pth'))
+        
+        # Log to MLflow
+        with mlflow.start_run(run_id=self.run.info.run_id):
+            mlflow.pytorch.log_model(
+                model,
+                f"checkpoint_epoch_{epoch}",
+                registered_model_name=f"{self.model_name}_v{epoch}" if is_best else None
+            )
+            
+            # Log training state
+            self.training_state['completed_epochs'] = epoch + 1
+            mlflow.log_param('training_state', json.dumps(self.training_state))
+            
+            if is_best:
+                mlflow.log_param('best_epoch', epoch)
+                mlflow.log_metric('best_val_loss', self.training_state['best_val_loss'])
+    
+    def load_checkpoint(self, model, optimizer):
+        """Load latest checkpoint from MLflow or local"""
+        try:
+            # Try loading from MLflow first
+            with mlflow.start_run(run_id=self.run.info.run_id):
+                latest_model = mlflow.pytorch.load_model(
+                    f"runs:/{self.run.info.run_id}/checkpoint_epoch_{self.training_state['completed_epochs']-1}"
+                )
+                model.load_state_dict(latest_model.state_dict())
+                
+                print(f"Loaded checkpoint from MLflow. Completed epochs: {self.training_state['completed_epochs']}")
+                return self.training_state['completed_epochs']
+        except:
+            # Fallback to local checkpoint
+            checkpoint_path = os.path.join(self.checkpoint_dir, 'last.pth')
+            if os.path.exists(checkpoint_path):
+                checkpoint = torch.load(checkpoint_path)
+                model.load_state_dict(checkpoint['model_state_dict'])
+                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                print(f"Loaded local checkpoint. Completed epochs: {self.training_state['completed_epochs']}")
+                return self.training_state['completed_epochs']
+        
+        print("No checkpoint found, starting fresh")
+        return 0
+    
+    def log_metrics(self, metrics, step=None):
+        """Log metrics to MLflow"""
+        with mlflow.start_run(run_id=self.run.info.run_id):
+            mlflow.log_metrics(metrics, step=step)
+    
+    def log_batch_metrics(self, batch_idx, loss, acc, lr):
+        """Log batch-level metrics"""
+        with mlflow.start_run(run_id=self.run.info.run_id):
+            mlflow.log_metrics({
+                'batch_loss': loss,
+                'batch_accuracy': acc,
+                'learning_rate': lr
+            }, step=batch_idx)
+    
+    def finish(self):
+        """End MLflow run"""
+        if mlflow.active_run():
+            mlflow.end_run()
     
     def init_epoch(self, epoch, num_batches):
         """Initialize progress bars for new epoch"""
@@ -165,86 +248,6 @@ class TrainingTracker:
         if self.val_pbar is not None:
             self.val_pbar.close()
     
-    def save_checkpoint(self, model, optimizer, epoch, is_best=False):
-        """Save model checkpoint"""
-        checkpoint_dir = os.path.join(Config.CHECKPOINT_DIR, self.model_name)
-        os.makedirs(checkpoint_dir, exist_ok=True)
-        
-        # Convert all numpy arrays and tensors to regular Python types for JSON serialization
-        metrics_json = {}
-        for key, value in self.metrics.items():
-            if isinstance(value, dict):
-                metrics_json[key] = {}
-                for k, v in value.items():
-                    if isinstance(v, (list, np.ndarray)):
-                        metrics_json[key][k] = [float(x) if isinstance(x, (np.number, torch.Tensor)) else x for x in v]
-                    else:
-                        metrics_json[key][k] = float(v) if isinstance(v, (np.number, torch.Tensor)) else v
-            else:
-                metrics_json[key] = float(value) if isinstance(value, (np.number, torch.Tensor)) else value
-        
-        state = {
-            'epoch': epoch,
-            'model_name': self.model_name,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'metrics': metrics_json
-        }
-        
-        # Save last checkpoint
-        torch.save(state, os.path.join(checkpoint_dir, 'last.pth'))
-        
-        # Save best if needed
-        if is_best:
-            torch.save(state, os.path.join(checkpoint_dir, 'best.pth'))
-        
-        # Save metrics separately to ensure consistency
-        metrics_file = os.path.join(checkpoint_dir, 'metrics.json')
-        with open(metrics_file, 'w') as f:
-            json.dump(metrics_json, f, indent=4)
-    
-    def load_checkpoint(self, model, optimizer, checkpoint_type='last'):
-        """Load model checkpoint and return next epoch number"""
-        checkpoint_path = os.path.join(self.checkpoint_dir, f'{checkpoint_type}.pth')
-        
-        if os.path.exists(checkpoint_path):
-            print(f"Loading checkpoint from {checkpoint_path}")
-            checkpoint = torch.load(checkpoint_path)
-            
-            # Verify model architecture
-            if 'model_name' in checkpoint and checkpoint['model_name'] != self.model_name:
-                raise ValueError(
-                    f"Model architecture mismatch. Checkpoint is for {checkpoint['model_name']}, "
-                    f"but trying to load into {self.model_name}"
-                )
-            
-            try:
-                model.load_state_dict(checkpoint['model_state_dict'])
-                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                
-                # Load metrics from metrics.json instead of checkpoint
-                metrics_file = os.path.join(self.checkpoint_dir, 'metrics.json')
-                if os.path.exists(metrics_file):
-                    with open(metrics_file, 'r') as f:
-                        self.metrics = json.load(f)
-                else:
-                    self.metrics = checkpoint['metrics']  # Fallback to checkpoint metrics
-                
-                # Load training state
-                if os.path.exists(self.training_state_file):
-                    self.training_state = self._load_training_state()  # This will update total_epochs
-                
-                completed_epochs = self.training_state['completed_epochs']
-                remaining_epochs = Config.NUM_EPOCHS - completed_epochs
-                print(f"Successfully loaded checkpoint. Completed epochs: {completed_epochs}")
-                print(f"Remaining epochs: {remaining_epochs}")
-                return completed_epochs
-            except Exception as e:
-                raise ValueError(f"Error loading checkpoint: {str(e)}")
-        
-        print("No checkpoint found, starting fresh training...")
-        return 0
-
     def reset_training(self):
         """Reset training state"""
         self.training_state = {

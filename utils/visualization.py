@@ -10,6 +10,9 @@ import seaborn as sns
 from sklearn.metrics import confusion_matrix, roc_curve, auc
 from IPython.display import display, Image
 from config.config import Config
+import mlflow
+from mlflow.tracking import MlflowClient
+from config.mlflow_config import MLflowConfig
 
 class VisualizationManager:
     def __init__(self, model_name, mode='train', resume_from=None):
@@ -60,6 +63,12 @@ class VisualizationManager:
             'val': '#e74c3c',
             'test': '#3498db'
         }
+        
+        self.client = MlflowClient()
+        
+        # Get experiment
+        self.experiment_name = MLflowConfig.get_experiment_name(model_name)
+        self.experiment = mlflow.get_experiment_by_name(self.experiment_name)
     
     def _load_previous_metrics(self, checkpoint_dir):
         """Load metrics from previous training"""
@@ -95,6 +104,17 @@ class VisualizationManager:
             self.metrics['train']['epoch_acc'].append(epoch_acc)
         if learning_rate is not None:
             self.metrics['train']['learning_rates'].append(learning_rate)
+        
+        """Log training metrics to MLflow"""
+        if mlflow.active_run():
+            metrics = {}
+            if epoch_loss is not None:
+                metrics['train_loss'] = epoch_loss
+            if epoch_acc is not None:
+                metrics['train_accuracy'] = epoch_acc
+            if learning_rate is not None:
+                metrics['learning_rate'] = learning_rate
+            mlflow.log_metrics(metrics)
     
     def update_validation_metrics(self, val_loss=None, val_acc=None, auc_roc=None, f1_score=None):
         """Update validation metrics"""
@@ -106,6 +126,19 @@ class VisualizationManager:
             self.metrics['val']['auc_roc'].append(auc_roc)
         if f1_score is not None:
             self.metrics['val']['f1_score'].append(f1_score)
+        
+        """Log validation metrics to MLflow"""
+        if mlflow.active_run():
+            metrics = {}
+            if val_loss is not None:
+                metrics['val_loss'] = val_loss
+            if val_acc is not None:
+                metrics['val_accuracy'] = val_acc
+            if auc_roc is not None:
+                metrics['val_auc_roc'] = auc_roc
+            if f1_score is not None:
+                metrics['val_f1_score'] = f1_score
+            mlflow.log_metrics(metrics)
     
     def update_test_metrics(self, y_true, y_pred, y_prob):
         """Update test metrics"""
@@ -246,3 +279,95 @@ class VisualizationManager:
         # Display plots if in Kaggle environment
         if os.path.exists('/kaggle'):
             self.display_plots() 
+    
+    def plot_training_progress(self):
+        """Plot training progress using MLflow data"""
+        if not self.experiment:
+            print("No experiment found")
+            return
+        
+        # Get latest run
+        runs = self.client.search_runs(
+            experiment_ids=[self.experiment.experiment_id],
+            order_by=["start_time DESC"]
+        )
+        
+        if not runs:
+            print("No runs found")
+            return
+        
+        latest_run = runs[0]
+        metrics = latest_run.data.metrics
+        
+        # Create and save plots
+        self._plot_metrics(metrics)
+        
+    def _plot_metrics(self, metrics):
+        """Create individual metric plots and log to MLflow"""
+        # Loss plot
+        if 'train_loss' in metrics or 'val_loss' in metrics:
+            plt.figure(figsize=(10, 6))
+            if 'train_loss' in metrics:
+                plt.plot(metrics['train_loss'], color=self.colors['train'], label='Train Loss')
+            if 'val_loss' in metrics:
+                plt.plot(metrics['val_loss'], color=self.colors['val'], label='Val Loss')
+            plt.title(f'Loss History - {self.model_name}')
+            plt.xlabel('Epoch')
+            plt.ylabel('Loss')
+            plt.legend()
+            plt.grid(True)
+            mlflow.log_figure(plt.gcf(), "loss_history.png")
+            plt.close()
+        
+        # Accuracy plot
+        if 'train_accuracy' in metrics or 'val_accuracy' in metrics:
+            plt.figure(figsize=(10, 6))
+            if 'train_accuracy' in metrics:
+                plt.plot(metrics['train_accuracy'], color=self.colors['train'], label='Train Acc')
+            if 'val_accuracy' in metrics:
+                plt.plot(metrics['val_accuracy'], color=self.colors['val'], label='Val Acc')
+            plt.title(f'Accuracy History - {self.model_name}')
+            plt.xlabel('Epoch')
+            plt.ylabel('Accuracy')
+            plt.legend()
+            plt.grid(True)
+            mlflow.log_figure(plt.gcf(), "accuracy_history.png")
+            plt.close()
+        
+        # Validation metrics plot
+        if 'val_auc_roc' in metrics and 'val_f1_score' in metrics:
+            plt.figure(figsize=(10, 6))
+            plt.plot(metrics['val_auc_roc'], color='purple', label='AUC-ROC')
+            plt.plot(metrics['val_f1_score'], color='orange', label='F1-Score')
+            plt.title(f'Validation Metrics - {self.model_name}')
+            plt.xlabel('Epoch')
+            plt.ylabel('Score')
+            plt.legend()
+            plt.grid(True)
+            mlflow.log_figure(plt.gcf(), "validation_metrics.png")
+            plt.close()
+    
+    def log_confusion_matrix(self, conf_matrix):
+        """Log confusion matrix plot to MLflow"""
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues')
+        plt.title(f'Confusion Matrix - {self.model_name}')
+        plt.ylabel('True Label')
+        plt.xlabel('Predicted Label')
+        mlflow.log_figure(plt.gcf(), "confusion_matrix.png")
+        plt.close()
+    
+    def log_roc_curve(self, fpr, tpr, auc_score):
+        """Log ROC curve plot to MLflow"""
+        plt.figure(figsize=(8, 6))
+        plt.plot(fpr, tpr, color=self.colors['test'], 
+                label=f'ROC curve (AUC = {auc_score:.3f})')
+        plt.plot([0, 1], [0, 1], 'k--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title(f'ROC Curve - {self.model_name}')
+        plt.legend(loc="lower right")
+        mlflow.log_figure(plt.gcf(), "roc_curve.png")
+        plt.close()

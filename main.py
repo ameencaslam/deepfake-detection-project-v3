@@ -1,5 +1,5 @@
 import argparse
-import torch
+import mlflow
 from config.config import Config
 from preprocessing.dataset import get_dataloaders
 from models import (
@@ -11,6 +11,7 @@ from models import (
     CrossAttentionHybrid
 )
 from training.trainer import Trainer
+from config.mlflow_config import MLflowConfig
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Deepfake Detection Training')
@@ -49,6 +50,10 @@ def get_model(model_name):
 def main():
     # Parse arguments
     args = parse_args()
+    
+    # Setup MLflow
+    mlflow.set_tracking_uri("file:///kaggle/working/mlruns")
+    MLflowConfig.setup_mlflow()
     
     # Update Config paths for Kaggle
     Config.DATA_ROOT = "/kaggle/input/3body-filtered-v2-10k"

@@ -12,3 +12,4 @@ pandas>=1.3.0  # For data handling
 tensorboard>=2.7.0  # For optional logging
 opencv-python>=4.5.3  # For image processing
 albumentations>=1.1.0  # For additional augmentations
+mlflow>=2.9.0

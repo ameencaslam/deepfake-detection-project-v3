@@ -94,21 +94,21 @@ class TrainingTracker:
         # Save checkpoint locally
         torch.save(checkpoint, os.path.join(self.checkpoint_dir, 'last.pth'))
         
-        # Log to MLflow
-        with mlflow.start_run(run_id=self.run.info.run_id):
+        # Log to MLflow using existing run
+        if mlflow.active_run():
+            # Log model to MLflow
             mlflow.pytorch.log_model(
                 model,
                 f"checkpoint_epoch_{epoch}",
                 registered_model_name=f"{self.model_name}_v{epoch}" if is_best else None
             )
             
-            # Log training state
-            self.training_state['completed_epochs'] = epoch + 1
-            mlflow.log_param('training_state', json.dumps(self.training_state))
-            
-            if is_best:
-                mlflow.log_param('best_epoch', epoch)
-                mlflow.log_metric('best_val_loss', self.training_state['best_val_loss'])
+            # Log training state metrics
+            mlflow.log_metrics({
+                'completed_epochs': float(epoch + 1),
+                'best_val_loss': float(self.training_state['best_val_loss']),
+                'best_epoch': float(self.training_state.get('best_epoch', 0))
+            }, step=epoch)
     
     def load_checkpoint(self, model, optimizer):
         """Load latest checkpoint from MLflow or local"""

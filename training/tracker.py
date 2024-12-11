@@ -23,8 +23,19 @@ class TrainingTracker:
         if not self.run:
             self.run = mlflow.start_run()
         
-        # Load or initialize training state
-        self.training_state = self._load_training_state()
+        # Initialize training state
+        self.training_state = {
+            'completed_epochs': 0,
+            'total_epochs': Config.NUM_EPOCHS,
+            'best_val_loss': float('inf')
+        }
+        
+        # Log initial state as metrics
+        if mlflow.active_run():
+            mlflow.log_metrics({
+                'completed_epochs': self.training_state['completed_epochs'],
+                'best_val_loss': self.training_state['best_val_loss']
+            })
         
         self.metrics = {
             'train': {
@@ -234,21 +245,19 @@ class TrainingTracker:
         self.training_state['completed_epochs'] += 1
         
         # Update best metrics if needed
-        if epoch_loss < self.training_state.get('best_val_loss', float('inf')):
+        if epoch_loss < self.training_state['best_val_loss']:
             self.training_state['best_val_loss'] = epoch_loss
             self.training_state['best_epoch'] = self.training_state['completed_epochs']
         
-        # Log metrics to MLflow - using existing run
+        # Log metrics to MLflow
         if mlflow.active_run():
             mlflow.log_metrics({
                 'epoch_loss': epoch_loss,
                 'epoch_accuracy': epoch_acc,
                 'best_val_loss': self.training_state['best_val_loss'],
-                'best_epoch': self.training_state.get('best_epoch', 0)
+                'best_epoch': float(self.training_state.get('best_epoch', 0)),
+                'completed_epochs': float(self.training_state['completed_epochs'])
             }, step=self.training_state['completed_epochs'])
-        
-        # Save updated training state
-        self._save_training_state()
     
     def close_validation(self):
         """Close validation progress bars"""
@@ -299,6 +308,10 @@ class TrainingTracker:
         return checkpoint_dir if os.path.exists(checkpoint_dir) else None
 
     def _save_training_state(self):
-        """Save training state to MLflow"""
+        """Save training state as metrics instead of parameters"""
         if mlflow.active_run():
-            mlflow.log_param('training_state', json.dumps(self.training_state))
+            mlflow.log_metrics({
+                'completed_epochs': float(self.training_state['completed_epochs']),
+                'best_val_loss': float(self.training_state['best_val_loss']),
+                'best_epoch': float(self.training_state.get('best_epoch', 0))
+            }, step=self.training_state['completed_epochs'])
